@@ -30,6 +30,7 @@ This design supports:
 
 ## Documentation
 
+- **[Growatt Cloud API](docs/growatt-cloud-api.md)** — Internal docs for Growatt Cloud API (Legacy and OpenAPI V1). Gathered and validated via `apps/growatt-api-explorer`.
 - **[Growatt MOD 12KTL3-HU Agent Knowledge Base](docs/growatt-mod-12ktl3-hu-agent-kb.md)** — Hardware specs, Modbus TCP integration, register mappings, safety constraints, and operational rules for agent-driven automation of the Growatt MOD 12KTL3-HU hybrid inverter (ShineWiFi-X).
 
 
