@@ -2,6 +2,8 @@
 
 **Applies to:** Growatt MOD 12KTL3-HU + APX5 P2 battery (MIN/TLX family, device type 7)
 
+> **Bridge note:** Only **`set_ac_charge_stop_soc`** is registered in growatt-bridge today. Other bridge operation IDs in this document are not shipped until integration-tested.
+
 ---
 
 ## What it controls

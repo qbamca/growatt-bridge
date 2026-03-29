@@ -15,7 +15,7 @@ Observations from running `scripts/test_connection.py` against the live Growatt 
 
 **Symptom:** `client.read_time_segments()` fails with `AttributeError: 'OpenApiV1' object has no attribute 'min_read_time_segment'`.
 
-**Impact:** `GET /config/time-segments` and the TOU portion of `GET /config` will 502 or return empty. Post-write readback for `set_time_segment` will also fail.
+**Impact:** `GET /config/time-segments` and the TOU portion of `GET /config` will 502 or return empty. Any future bridge TOU write would lack readback until this is fixed.
 
 **Root cause:** `GrowattClient.read_time_segments()` at `client.py:162` calls `self._api.min_read_time_segment(device_sn)`, but that method doesn't exist in growattServer 2.0.1.
 

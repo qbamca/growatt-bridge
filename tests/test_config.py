@@ -71,22 +71,22 @@ def test_empty_allowlist_returns_empty_list():
 
 
 def test_single_valid_operation():
-    s = make_settings(bridge_write_allowlist="set_charge_power")
-    assert s.parsed_write_allowlist() == ["set_charge_power"]
+    s = make_settings(bridge_write_allowlist="set_ac_charge_stop_soc")
+    assert s.parsed_write_allowlist() == ["set_ac_charge_stop_soc"]
 
 
-def test_multiple_valid_operations():
-    s = make_settings(bridge_write_allowlist="set_charge_power,set_discharge_power")
-    assert set(s.parsed_write_allowlist()) == {"set_charge_power", "set_discharge_power"}
+def test_multiple_valid_operations_duplicate_allowed():
+    s = make_settings(bridge_write_allowlist="set_ac_charge_stop_soc,set_ac_charge_stop_soc")
+    assert s.parsed_write_allowlist() == ["set_ac_charge_stop_soc", "set_ac_charge_stop_soc"]
 
 
 def test_allowlist_strips_whitespace():
-    s = make_settings(bridge_write_allowlist=" set_charge_power , set_discharge_power ")
-    assert set(s.parsed_write_allowlist()) == {"set_charge_power", "set_discharge_power"}
+    s = make_settings(bridge_write_allowlist=" set_ac_charge_stop_soc ")
+    assert s.parsed_write_allowlist() == ["set_ac_charge_stop_soc"]
 
 
 def test_invalid_operation_raises():
-    s = make_settings(bridge_write_allowlist="set_charge_power,totally_fake_op")
+    s = make_settings(bridge_write_allowlist="set_ac_charge_stop_soc,totally_fake_op")
     with pytest.raises(ValueError, match="totally_fake_op"):
         s.parsed_write_allowlist()
 
@@ -104,23 +104,23 @@ def test_all_valid_operations_accepted():
 def test_readonly_blocks_all_operations():
     s = make_settings(
         bridge_readonly=True,
-        bridge_write_allowlist="set_charge_power",
+        bridge_write_allowlist="set_ac_charge_stop_soc",
     )
-    assert s.is_operation_allowed("set_charge_power") is False
+    assert s.is_operation_allowed("set_ac_charge_stop_soc") is False
 
 
 def test_write_mode_unlists_operation():
     s = make_settings(
         bridge_readonly=False,
-        bridge_write_allowlist="set_charge_power",
+        bridge_write_allowlist="set_ac_charge_stop_soc",
     )
-    assert s.is_operation_allowed("set_charge_power") is True
+    assert s.is_operation_allowed("set_ac_charge_stop_soc") is True
 
 
 def test_write_mode_blocks_non_allowlisted_operation():
     s = make_settings(
         bridge_readonly=False,
-        bridge_write_allowlist="set_charge_power",
+        bridge_write_allowlist="set_ac_charge_stop_soc",
     )
     assert s.is_operation_allowed("set_discharge_power") is False
 

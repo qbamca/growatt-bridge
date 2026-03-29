@@ -126,15 +126,9 @@ The Growatt `min_write_parameter` API accepts an arbitrary `parameter_id` string
 
 **What the bridge allows (complete list as of current implementation):**
 
-1. `set_time_segment` — TOU slot configuration
-2. `set_charge_power` — battery charge rate (0–100%)
-3. `set_discharge_power` — battery discharge rate (0–100%)
-4. `set_discharge_stop_soc` — discharge floor (10–100%)
-5. `set_ac_charge_enable` — AC charge on/off
-6. `set_ac_charge_stop_soc` — AC charge SOC ceiling (10–100%)
-7. `set_export_limit` — export power cap (0–100%, requires meter acknowledgment)
+1. `set_ac_charge_stop_soc` — AC (grid) charge stops at this SOC (10–100%). **The only operation registered until others are integration-tested.**
 
-**Everything else requires manual intervention via Growatt ShineServer (professional portal) or ShinePhone app.**
+**Everything else requires manual intervention via Growatt ShineServer (professional portal) or ShinePhone app.** Additional named operations can be re-added in `OPERATION_REGISTRY` only after end-to-end validation.
 
 ---
 

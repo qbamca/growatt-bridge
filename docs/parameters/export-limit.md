@@ -2,6 +2,8 @@
 
 **Applies to:** Growatt MOD 12KTL3-HU + APX5 P2 battery (MIN/TLX family, device type 7)
 
+> **Bridge note:** growatt-bridge does not register `set_export_limit` until that operation is integration-tested. This page remains the safety reference for export limiting in general.
+
 ---
 
 ## What it controls
@@ -21,7 +23,7 @@ When enabled and active:
 
 ## Hardware requirement — physical export meter
 
-> **WARNING:** Enabling the export limit (`set_export_limit`) without a correctly installed and communicating Growatt meter will cause the inverter to fault or behave erratically. The bridge enforces acknowledgment of this requirement before accepting the write.
+> **WARNING:** Enabling the export limit without a correctly installed and communicating Growatt meter will cause the inverter to fault or behave erratically. Any future bridge write for export limiting must require explicit human acknowledgment of meter presence.
 
 ### Required meter hardware
 

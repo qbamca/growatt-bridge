@@ -66,6 +66,7 @@ def create_app() -> FastAPI:
     from .routes.telemetry import router as telemetry_router
     from .routes.config_read import router as config_router
     from .routes.commands import router as commands_router
+    from .routes.write_operations import router as write_operations_router
 
     app.include_router(health_router)
     app.include_router(plants_router)
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     app.include_router(telemetry_router)
     app.include_router(config_router)
     app.include_router(commands_router)
+    app.include_router(write_operations_router)
 
     return app
 

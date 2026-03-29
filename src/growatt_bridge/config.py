@@ -19,13 +19,7 @@ from .legacy_shine_web import DEFAULT_WEB_BASE_URL
 # Only IDs from this set may appear in BRIDGE_WRITE_ALLOWLIST.
 VALID_WRITE_OPERATIONS: frozenset[str] = frozenset(
     {
-        "set_time_segment",
-        "set_charge_power",
-        "set_discharge_power",
-        "set_discharge_stop_soc",
-        "set_ac_charge_enable",
         "set_ac_charge_stop_soc",
-        "set_export_limit",
     }
 )
 
@@ -143,7 +137,7 @@ class Settings(BaseSettings):
             default="",
             description=(
                 "Comma-separated list of write operation IDs that are permitted. "
-                "Example: set_charge_power,set_discharge_power. "
+                "Example: set_ac_charge_stop_soc. "
                 "Empty string means no writes even if bridge_readonly=false."
             ),
         ),

@@ -2,6 +2,8 @@
 
 **Applies to:** Growatt MOD 12KTL3-HU + APX5 P2 battery (MIN/TLX family, device type 7)
 
+> **Bridge note:** growatt-bridge does not register `set_charge_power` / `set_discharge_power` until those paths are integration-tested. Use ShinePhone / ShineServer for rate changes meanwhile.
+
 ---
 
 ## What it controls

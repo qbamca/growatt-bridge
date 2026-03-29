@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -11,7 +10,6 @@ import pytest
 
 from growatt_bridge.client import DeviceFamily
 from growatt_bridge.safety import (
-    OPERATION_REGISTRY,
     OperationValidationError,
     RateLimitError,
     SafetyLayer,
@@ -33,7 +31,7 @@ from tests.conftest import make_mock_client, make_settings
 
 def _write_layer(
     tmp_path: Path,
-    allowlist: str = "set_charge_power",
+    allowlist: str = "set_ac_charge_stop_soc",
     readonly: bool = False,
     rate_limit: int = 10,
 ) -> SafetyLayer:
@@ -55,7 +53,7 @@ def _write_layer(
 def test_readonly_blocks_write(tmp_path):
     layer = _write_layer(tmp_path, readonly=True)
     with pytest.raises(WriteNotPermittedError, match="readonly mode"):
-        layer.check_write_permitted("set_charge_power")
+        layer.check_write_permitted("set_ac_charge_stop_soc")
 
 
 def test_unknown_operation_raises(tmp_path):
@@ -65,15 +63,14 @@ def test_unknown_operation_raises(tmp_path):
 
 
 def test_not_allowlisted_raises(tmp_path):
-    layer = _write_layer(tmp_path, allowlist="set_discharge_power")
+    layer = _write_layer(tmp_path, allowlist="")
     with pytest.raises(WriteNotPermittedError, match="not in BRIDGE_WRITE_ALLOWLIST"):
-        layer.check_write_permitted("set_charge_power")
+        layer.check_write_permitted("set_ac_charge_stop_soc")
 
 
 def test_allowlisted_operation_passes(tmp_path):
     layer = _write_layer(tmp_path)
-    # Should not raise
-    layer.check_write_permitted("set_charge_power")
+    layer.check_write_permitted("set_ac_charge_stop_soc")
 
 
 # ── validate_params ───────────────────────────────────────────────────────────
@@ -85,68 +82,31 @@ def test_validate_unknown_op(tmp_path):
         layer.validate_params("not_real", {})
 
 
-def test_set_charge_power_valid(tmp_path):
+def test_set_ac_charge_stop_soc_valid(tmp_path):
     layer = _write_layer(tmp_path)
-    errors = layer.validate_params("set_charge_power", {"value": 75})
+    errors = layer.validate_params("set_ac_charge_stop_soc", {"value": 75})
     assert errors == []
 
 
-def test_set_charge_power_above_max(tmp_path):
+def test_set_ac_charge_stop_soc_above_max(tmp_path):
     layer = _write_layer(tmp_path)
-    errors = layer.validate_params("set_charge_power", {"value": 101})
+    errors = layer.validate_params("set_ac_charge_stop_soc", {"value": 101})
     assert any("≤ 100" in e for e in errors)
 
 
-def test_set_charge_power_below_min(tmp_path):
+def test_set_ac_charge_stop_soc_below_min(tmp_path):
     layer = _write_layer(tmp_path)
-    errors = layer.validate_params("set_charge_power", {"value": -1})
-    assert any("≥ 0" in e for e in errors)
-
-
-def test_set_charge_power_missing_value(tmp_path):
-    layer = _write_layer(tmp_path)
-    errors = layer.validate_params("set_charge_power", {})
-    assert any("required" in e for e in errors)
-
-
-def test_set_discharge_stop_soc_floor(tmp_path):
-    layer = _write_layer(tmp_path, allowlist="set_discharge_stop_soc")
-    # 0 must be rejected — hardcoded hardware floor of 10
-    errors = layer.validate_params("set_discharge_stop_soc", {"value": 0})
+    errors = layer.validate_params("set_ac_charge_stop_soc", {"value": 9})
     assert any("≥ 10" in e for e in errors)
 
 
-def test_set_discharge_stop_soc_boundary(tmp_path):
-    layer = _write_layer(tmp_path, allowlist="set_discharge_stop_soc")
-    assert layer.validate_params("set_discharge_stop_soc", {"value": 10}) == []
-    assert layer.validate_params("set_discharge_stop_soc", {"value": 100}) == []
+def test_set_ac_charge_stop_soc_missing_value(tmp_path):
+    layer = _write_layer(tmp_path)
+    errors = layer.validate_params("set_ac_charge_stop_soc", {})
+    assert any("required" in e for e in errors)
 
 
-def test_set_ac_charge_enable_valid_bool(tmp_path):
-    layer = _write_layer(tmp_path, allowlist="set_ac_charge_enable")
-    assert layer.validate_params("set_ac_charge_enable", {"enabled": True}) == []
-    assert layer.validate_params("set_ac_charge_enable", {"enabled": False}) == []
-
-
-def test_set_ac_charge_enable_rejects_non_bool(tmp_path):
-    layer = _write_layer(tmp_path, allowlist="set_ac_charge_enable")
-    errors = layer.validate_params("set_ac_charge_enable", {"enabled": 1})
-    assert any("boolean" in e for e in errors)
-
-
-def test_set_export_limit_requires_meter_acknowledged(tmp_path):
-    layer = _write_layer(tmp_path, allowlist="set_export_limit")
-    errors = layer.validate_params("set_export_limit", {"value": 50})
-    assert any("meter_acknowledged" in e for e in errors)
-
-
-def test_set_export_limit_with_meter_acknowledged(tmp_path):
-    layer = _write_layer(tmp_path, allowlist="set_export_limit")
-    errors = layer.validate_params("set_export_limit", {"value": 50, "meter_acknowledged": True})
-    assert errors == []
-
-
-# ── set_time_segment params ───────────────────────────────────────────────────
+# ── set_time_segment params (validators still used if operation is re-added) ──
 
 
 def test_time_segment_valid():
@@ -179,7 +139,7 @@ def test_time_segment_invalid_time_format():
 
 def test_time_segment_missing_fields():
     errors = _validate_time_segment_params({})
-    assert len(errors) == 4  # segment, mode, start_time, end_time all missing
+    assert len(errors) == 4
 
 
 # ── _is_valid_hhmm ────────────────────────────────────────────────────────────
@@ -193,7 +153,7 @@ def test_time_segment_missing_fields():
         ("08:30", True),
         ("24:00", False),
         ("23:60", False),
-        ("8:30", True),  # Single-digit hour is fine
+        ("8:30", True),
         ("abc", False),
         ("", False),
         ("12", False),
@@ -248,7 +208,7 @@ def test_rate_limiter_allows_up_to_max():
     assert limiter.check_and_record() is True
     assert limiter.check_and_record() is True
     assert limiter.check_and_record() is True
-    assert limiter.check_and_record() is False  # 4th within window
+    assert limiter.check_and_record() is False
 
 
 def test_rate_limiter_current_count():
@@ -265,13 +225,13 @@ def test_rate_limiter_current_count():
 def test_audit_logger_writes_entry(tmp_path):
     log_path = tmp_path / "audit.jsonl"
     audit = _AuditLogger(log_path)
-    audit_id = audit.record({"operation": "set_charge_power", "device_sn": "INV001"})
+    audit_id = audit.record({"operation": "set_ac_charge_stop_soc", "device_sn": "INV001"})
 
     assert log_path.exists()
     lines = log_path.read_text().strip().splitlines()
     assert len(lines) == 1
     entry = json.loads(lines[0])
-    assert entry["operation"] == "set_charge_power"
+    assert entry["operation"] == "set_ac_charge_stop_soc"
     assert entry["audit_id"] == audit_id
     assert "logged_at" in entry
 
@@ -299,11 +259,9 @@ def test_audit_logger_multiple_entries(tmp_path):
 
 
 def test_audit_logger_survives_bad_path(caplog):
-    """Audit log failure must not raise — it logs a warning only."""
     audit = _AuditLogger(Path("/proc/readonly-does-not-exist/audit.jsonl"))
-    # Should return an audit_id without raising
     audit_id = audit.record({"operation": "op"})
-    assert audit_id  # UUID returned even on I/O failure
+    assert audit_id
 
 
 # ── SafetyLayer.execute_write ─────────────────────────────────────────────────
@@ -317,27 +275,31 @@ def test_execute_write_readonly_raises(tmp_path):
     client = make_mock_client()
     layer = SafetyLayer(settings, client)
     with pytest.raises(WriteNotPermittedError):
-        layer.execute_write("set_charge_power", "INV001", DeviceFamily.MIN, {"value": 50})
+        layer.execute_write(
+            "set_ac_charge_stop_soc", "INV001", DeviceFamily.MIN, {"value": 50}
+        )
 
 
 def test_execute_write_unsupported_family_raises(tmp_path):
     layer = _write_layer(tmp_path)
     with pytest.raises(Exception):
-        # set_charge_power only supports MIN; SPH should raise
-        layer.execute_write("set_charge_power", "INV001", DeviceFamily.SPH, {"value": 50})
+        layer.execute_write(
+            "set_ac_charge_stop_soc", "INV001", DeviceFamily.SPH, {"value": 50}
+        )
 
 
 def test_execute_write_validation_error_raises(tmp_path):
     layer = _write_layer(tmp_path)
     with pytest.raises(OperationValidationError):
-        layer.execute_write("set_charge_power", "INV001", DeviceFamily.MIN, {"value": 999})
+        layer.execute_write(
+            "set_ac_charge_stop_soc", "INV001", DeviceFamily.MIN, {"value": 999}
+        )
 
 
 def test_execute_write_rate_limit_raises(tmp_path):
-    layer = _write_layer(tmp_path, rate_limit=1)
     settings = make_settings(
         bridge_readonly=False,
-        bridge_write_allowlist="set_charge_power",
+        bridge_write_allowlist="set_ac_charge_stop_soc",
         bridge_rate_limit_writes=1,
         bridge_audit_log=tmp_path / "audit.jsonl",
     )
@@ -345,15 +307,21 @@ def test_execute_write_rate_limit_raises(tmp_path):
     client.min_write_parameter.return_value = {"result_code": "1"}
     layer2 = SafetyLayer(settings, client)
 
-    layer2.execute_write("set_charge_power", "INV001", DeviceFamily.MIN, {"value": 50})
+    layer2.execute_write(
+        "set_ac_charge_stop_soc", "INV001", DeviceFamily.MIN, {"value": 50}
+    )
     with pytest.raises(RateLimitError):
-        layer2.execute_write("set_charge_power", "INV001", DeviceFamily.MIN, {"value": 60})
+        layer2.execute_write(
+            "set_ac_charge_stop_soc", "INV001", DeviceFamily.MIN, {"value": 60}
+        )
 
 
 def test_execute_write_success_returns_command_response(tmp_path):
     layer = _write_layer(tmp_path)
-    resp = layer.execute_write("set_charge_power", "INV001", DeviceFamily.MIN, {"value": 75})
-    assert resp.operation == "set_charge_power"
+    resp = layer.execute_write(
+        "set_ac_charge_stop_soc", "INV001", DeviceFamily.MIN, {"value": 75}
+    )
+    assert resp.operation == "set_ac_charge_stop_soc"
     assert resp.device_sn == "INV001"
     assert resp.audit_id
     assert resp.success is True
@@ -362,7 +330,7 @@ def test_execute_write_success_returns_command_response(tmp_path):
 def test_execute_write_api_failure_captured_in_response(tmp_path):
     settings = make_settings(
         bridge_readonly=False,
-        bridge_write_allowlist="set_charge_power",
+        bridge_write_allowlist="set_ac_charge_stop_soc",
         bridge_rate_limit_writes=10,
         bridge_audit_log=tmp_path / "audit.jsonl",
     )
@@ -370,7 +338,9 @@ def test_execute_write_api_failure_captured_in_response(tmp_path):
     client.min_write_parameter.return_value = {"result_code": "0", "result_msg": "invalid token"}
     layer = SafetyLayer(settings, client)
 
-    resp = layer.execute_write("set_charge_power", "INV001", DeviceFamily.MIN, {"value": 50})
+    resp = layer.execute_write(
+        "set_ac_charge_stop_soc", "INV001", DeviceFamily.MIN, {"value": 50}
+    )
     assert resp.success is False
     assert "invalid token" in (resp.error or "")
 
@@ -381,7 +351,7 @@ def test_execute_write_api_failure_captured_in_response(tmp_path):
 def test_dry_run_valid(tmp_path):
     layer = _write_layer(tmp_path)
     valid, errors = layer.dry_run_validate(
-        "set_charge_power", "INV001", DeviceFamily.MIN, {"value": 50}
+        "set_ac_charge_stop_soc", "INV001", DeviceFamily.MIN, {"value": 50}
     )
     assert valid is True
     assert errors == []
@@ -390,7 +360,7 @@ def test_dry_run_valid(tmp_path):
 def test_dry_run_invalid_params(tmp_path):
     layer = _write_layer(tmp_path)
     valid, errors = layer.dry_run_validate(
-        "set_charge_power", "INV001", DeviceFamily.MIN, {"value": 200}
+        "set_ac_charge_stop_soc", "INV001", DeviceFamily.MIN, {"value": 5}
     )
     assert valid is False
     assert errors
@@ -399,13 +369,13 @@ def test_dry_run_invalid_params(tmp_path):
 def test_dry_run_readonly_returns_error(tmp_path):
     settings = make_settings(
         bridge_readonly=True,
-        bridge_write_allowlist="set_charge_power",
+        bridge_write_allowlist="set_ac_charge_stop_soc",
         bridge_audit_log=tmp_path / "audit.jsonl",
     )
     client = make_mock_client()
     layer = SafetyLayer(settings, client)
     valid, errors = layer.dry_run_validate(
-        "set_charge_power", "INV001", DeviceFamily.MIN, {"value": 50}
+        "set_ac_charge_stop_soc", "INV001", DeviceFamily.MIN, {"value": 50}
     )
     assert valid is False
     assert any("readonly" in e.lower() for e in errors)
@@ -423,7 +393,7 @@ def test_legacy_prereq_missing_plant_id(tmp_path):
     )
     layer = SafetyLayer(settings, make_mock_client())
     errors = layer.validate_params(
-        "set_charge_power",
+        "set_ac_charge_stop_soc",
         {"value": 50},
         plant_id=None,
         family=DeviceFamily.MIN,
@@ -440,7 +410,7 @@ def test_legacy_prereq_missing_web_password(tmp_path):
     )
     layer = SafetyLayer(settings, make_mock_client())
     errors = layer.validate_params(
-        "set_charge_power",
+        "set_ac_charge_stop_soc",
         {"value": 50},
         plant_id="plant-1",
         family=DeviceFamily.MIN,
@@ -455,7 +425,7 @@ def test_legacy_prereq_skipped_for_sph(tmp_path):
     )
     layer = SafetyLayer(settings, make_mock_client())
     errors = layer.validate_params(
-        "set_charge_power",
+        "set_ac_charge_stop_soc",
         {"value": 50},
         plant_id=None,
         family=DeviceFamily.SPH,
@@ -466,7 +436,7 @@ def test_legacy_prereq_skipped_for_sph(tmp_path):
 def test_legacy_execute_uses_tcp_set_scalar(tmp_path):
     settings = make_settings(
         bridge_readonly=False,
-        bridge_write_allowlist="set_charge_power",
+        bridge_write_allowlist="set_ac_charge_stop_soc",
         bridge_rate_limit_writes=10,
         bridge_audit_log=tmp_path / "audit.jsonl",
         bridge_legacy_web_min_writes=True,
@@ -480,7 +450,7 @@ def test_legacy_execute_uses_tcp_set_scalar(tmp_path):
 
     with patch.object(layer, "_get_legacy_client", return_value=mock_legacy):
         resp = layer.execute_write(
-            "set_charge_power",
+            "set_ac_charge_stop_soc",
             "INV001",
             DeviceFamily.MIN,
             {"value": 50},
@@ -489,44 +459,22 @@ def test_legacy_execute_uses_tcp_set_scalar(tmp_path):
 
     assert resp.success is True
     mock_legacy.tcp_set_scalar.assert_called_once_with(
-        "plant-1", "INV001", "charge_power_command", "50"
+        "plant-1", "INV001", "ub_ac_charging_stop_soc", "50"
     )
     client.min_write_parameter.assert_not_called()
 
 
-def test_legacy_time_segment_uses_tcp_set(tmp_path):
-    settings = make_settings(
-        bridge_readonly=False,
-        bridge_write_allowlist="set_time_segment",
-        bridge_rate_limit_writes=10,
-        bridge_audit_log=tmp_path / "audit.jsonl",
-        bridge_legacy_web_min_writes=True,
-        growatt_web_username="u",
-        growatt_web_password="p",
-    )
-    client = make_mock_client()
-    layer = SafetyLayer(settings, client)
-    mock_legacy = MagicMock()
-    mock_legacy.tcp_set_time_segment.return_value = {"success": True}
+# ── _validate_parameter_params direct (bool op removed; test numeric path) ────
 
-    params = {
-        "segment": 2,
-        "mode": 1,
-        "start_time": "08:30",
-        "end_time": "17:00",
-        "enabled": True,
-    }
-    with patch.object(layer, "_get_legacy_client", return_value=mock_legacy):
-        resp = layer.execute_write(
-            "set_time_segment",
-            "INV001",
-            DeviceFamily.MIN,
-            params,
-            plant_id="plant-9",
-        )
 
-    assert resp.success is True
-    mock_legacy.tcp_set_time_segment.assert_called_once_with(
-        "plant-9", "INV001", 2, 1, 8, 30, 17, 0, True
+def test_validate_parameter_params_numeric():
+    from growatt_bridge.safety import _ParamSpec
+
+    ps = _ParamSpec(
+        parameter_id="x",
+        legacy_web_type="x",
+        min_val=10,
+        max_val=100,
     )
-    client.min_write_time_segment.assert_not_called()
+    errors = _validate_parameter_params(ps, {"value": 50})
+    assert errors == []

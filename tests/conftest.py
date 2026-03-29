@@ -115,10 +115,10 @@ async def async_client(tmp_path):
 
 @pytest_asyncio.fixture
 async def write_client(tmp_path):
-    """AsyncClient with writes enabled (set_charge_power allowlisted)."""
+    """AsyncClient with writes enabled (set_ac_charge_stop_soc allowlisted)."""
     settings = make_settings(
         bridge_readonly=False,
-        bridge_write_allowlist="set_charge_power,set_discharge_stop_soc,set_time_segment",
+        bridge_write_allowlist="set_ac_charge_stop_soc",
         bridge_audit_log=tmp_path / "audit.jsonl",
     )
     mock_client = make_mock_client()

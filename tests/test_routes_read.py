@@ -51,7 +51,7 @@ async def test_info_with_write_allowlist(tmp_path):
 
     settings = make_settings(
         bridge_readonly=False,
-        bridge_write_allowlist="set_charge_power,set_discharge_power",
+        bridge_write_allowlist="set_ac_charge_stop_soc",
         bridge_audit_log=tmp_path / "audit.jsonl",
     )
     mock_client = make_mock_client()
@@ -62,7 +62,7 @@ async def test_info_with_write_allowlist(tmp_path):
         assert resp.status_code == 200
         data = resp.json()
         assert data["readonly"] is False
-        assert set(data["allowed_write_operations"]) == {"set_charge_power", "set_discharge_power"}
+        assert data["allowed_write_operations"] == ["set_ac_charge_stop_soc"]
 
 
 # ── GET /api/v1/plants ────────────────────────────────────────────────────────
@@ -234,7 +234,7 @@ async def test_get_device_capabilities_write_mode(tmp_path):
 
     settings = make_settings(
         bridge_readonly=False,
-        bridge_write_allowlist="set_charge_power",
+        bridge_write_allowlist="set_ac_charge_stop_soc",
         bridge_audit_log=tmp_path / "audit.jsonl",
     )
     mock_client = make_mock_client(family=DeviceFamily.MIN)
@@ -245,4 +245,4 @@ async def test_get_device_capabilities_write_mode(tmp_path):
         assert resp.status_code == 200
         data = resp.json()
         assert data["readonly"] is False
-        assert "set_charge_power" in data["supported_write_operations"]
+        assert data["supported_write_operations"] == ["set_ac_charge_stop_soc"]

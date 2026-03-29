@@ -2,6 +2,8 @@
 
 **Applies to:** Growatt MOD 12KTL3-HU + APX5 P2 battery (MIN/TLX family, device type 7)
 
+> **Bridge note:** growatt-bridge does not currently register a TOU write command (no `set_time_segment` in `OPERATION_REGISTRY`). This page documents behaviour and low-level APIs for operators; use ShinePhone / ShineServer for schedule edits until a tested bridge operation exists.
+
 ---
 
 ## What it controls

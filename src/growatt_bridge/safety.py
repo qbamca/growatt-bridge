@@ -129,21 +129,6 @@ def _legacy_min_write_prerequisite_errors(
     return errors
 
 
-def _export_limit_meter_guard(params: dict[str, Any]) -> str | None:
-    """Require acknowledgment that a physical export meter is physically installed.
-
-    Setting an export limit without a meter causes the inverter to fault.
-    Callers must pass ``meter_acknowledged=true`` to proceed.
-    """
-    if not params.get("meter_acknowledged"):
-        return (
-            "set_export_limit requires meter_acknowledged=true. "
-            "Confirm a physical export-metering CT clamp or meter is installed before "
-            "setting an export limit — enabling this without a meter will cause inverter faults."
-        )
-    return None
-
-
 # ── Operation registry ────────────────────────────────────────────────────────
 #
 # This is the ONLY place where parameter_id strings and value constraints live.
@@ -153,59 +138,9 @@ def _export_limit_meter_guard(params: dict[str, Any]) -> str | None:
 # Legacy web ``type`` strings differ from OpenAPI parameter_id; mapping table:
 # docs/growatt-cloud-api.md § Legacy tcpSet.do type mapping.
 
+# Only operations that have been exercised end-to-end against real hardware belong
+# here. Add more entries only after integration testing.
 OPERATION_REGISTRY: dict[str, _OperationSpec] = {
-    "set_time_segment": _OperationSpec(
-        operation_id="set_time_segment",
-        description=(
-            "Write a single TOU (time-of-use) schedule slot. "
-            "Required params: segment (1–9), mode (0–2), start_time (HH:MM), "
-            "end_time (HH:MM). Optional: enabled (bool, default true)."
-        ),
-        is_time_segment=True,
-    ),
-    "set_charge_power": _OperationSpec(
-        operation_id="set_charge_power",
-        description="Set maximum battery charge power as % of rated capacity (0–100).",
-        param_spec=_ParamSpec(
-            parameter_id="pv_active_p_rate",
-            legacy_web_type="charge_power_command",
-            min_val=0,
-            max_val=100,
-        ),
-    ),
-    "set_discharge_power": _OperationSpec(
-        operation_id="set_discharge_power",
-        description="Set maximum battery discharge power as % of rated capacity (0–100).",
-        param_spec=_ParamSpec(
-            parameter_id="grid_first_discharge_power_rate",
-            legacy_web_type="dis_charge_power_command",
-            min_val=0,
-            max_val=100,
-        ),
-    ),
-    "set_discharge_stop_soc": _OperationSpec(
-        operation_id="set_discharge_stop_soc",
-        description=(
-            "Set minimum SOC threshold below which battery discharge is halted (10–100). "
-            "The floor of 10 % is hardcoded to prevent deep discharge — 0 is never permitted."
-        ),
-        param_spec=_ParamSpec(
-            parameter_id="discharge_stop_soc",
-            legacy_web_type="on_grid_discharge_stop_soc",
-            min_val=10,  # hardware safety floor — never lower
-            max_val=100,
-        ),
-    ),
-    "set_ac_charge_enable": _OperationSpec(
-        operation_id="set_ac_charge_enable",
-        description="Enable or disable AC charging (grid → battery).",
-        param_spec=_ParamSpec(
-            parameter_id="ac_charge",
-            legacy_web_type="ac_charge_enable",
-            value_key="enabled",
-            is_bool=True,
-        ),
-    ),
     "set_ac_charge_stop_soc": _OperationSpec(
         operation_id="set_ac_charge_stop_soc",
         description="Set SOC target at which AC (grid) charging automatically stops (10–100).",
@@ -216,21 +151,143 @@ OPERATION_REGISTRY: dict[str, _OperationSpec] = {
             max_val=100,
         ),
     ),
-    "set_export_limit": _OperationSpec(
-        operation_id="set_export_limit",
-        description=(
-            "Set export power limit as % of rated inverter capacity (0–100). "
-            "Requires meter_acknowledged=true to confirm a physical meter is installed."
-        ),
-        param_spec=_ParamSpec(
-            parameter_id="export_limit_power_rate",
-            legacy_web_type="export_limit_power_rate",
-            min_val=0,
-            max_val=100,
-        ),
-        extra_guards=[_export_limit_meter_guard],
-    ),
 }
+
+
+# ── Write operations catalog (LLM / agent discovery) ──────────────────────────
+
+
+def _params_schema_for_spec(spec: _OperationSpec) -> dict[str, Any]:
+    """Build a JSON-serializable params schema for *spec*."""
+    if spec.is_time_segment:
+        return {
+            "kind": "time_segment",
+            "fields": [
+                {
+                    "name": "segment",
+                    "type": "integer",
+                    "required": True,
+                    "min": 1,
+                    "max": 9,
+                },
+                {
+                    "name": "mode",
+                    "type": "integer",
+                    "required": True,
+                    "min": 0,
+                    "max": 2,
+                    "enum_meaning": {
+                        "0": "load_first",
+                        "1": "battery_first",
+                        "2": "grid_first",
+                    },
+                },
+                {
+                    "name": "start_time",
+                    "type": "string",
+                    "required": True,
+                    "format": "HH:MM",
+                    "description": "Start boundary (00:00–23:59).",
+                },
+                {
+                    "name": "end_time",
+                    "type": "string",
+                    "required": True,
+                    "format": "HH:MM",
+                    "description": "End boundary (00:00–23:59).",
+                },
+                {
+                    "name": "enabled",
+                    "type": "boolean",
+                    "required": False,
+                    "default": True,
+                },
+            ],
+        }
+
+    assert spec.param_spec is not None  # noqa: S101
+    ps = spec.param_spec
+    if ps.is_bool:
+        field_type = "boolean"
+    else:
+        field_type = "number"
+    field: dict[str, Any] = {
+        "name": ps.value_key,
+        "type": field_type,
+        "required": True,
+    }
+    if ps.min_val is not None:
+        field["min"] = ps.min_val
+    if ps.max_val is not None:
+        field["max"] = ps.max_val
+    return {"kind": "scalar", "fields": [field]}
+
+
+def _constraints_for_spec(_spec: _OperationSpec) -> dict[str, Any]:
+    return {"requires_meter_acknowledgment": False}
+
+
+def _currently_permitted(
+    operation_id: str,
+    *,
+    readonly: bool,
+    allowed: set[str] | None,
+) -> bool:
+    if readonly or allowed is None:
+        return False
+    return operation_id in allowed
+
+
+def build_write_operations_catalog(
+    *,
+    include_policy: bool,
+    settings: Settings | None,
+) -> dict[str, Any]:
+    """Return a JSON-serializable catalog of all registered write operations.
+
+    When *include_policy* is True and *settings* is provided, each operation
+    includes ``currently_permitted`` (readonly + allowlist).  Invalid
+    ``BRIDGE_WRITE_ALLOWLIST`` env values yield ``allowlist_parse_error`` and
+    no permitted operations.
+    """
+    readonly: bool | None = None
+    allowed: set[str] | None = None
+    allowlist_parse_error: str | None = None
+
+    if include_policy and settings is not None:
+        readonly = settings.bridge_readonly
+        if readonly:
+            allowed = set()
+        else:
+            try:
+                allowed = set(settings.parsed_write_allowlist())
+            except ValueError as exc:
+                allowlist_parse_error = str(exc)
+                allowed = set()
+
+    operations: list[dict[str, Any]] = []
+    for op_id in sorted(OPERATION_REGISTRY.keys()):
+        spec = OPERATION_REGISTRY[op_id]
+        entry: dict[str, Any] = {
+            "operation_id": spec.operation_id,
+            "description": spec.description,
+            "supported_families": list(spec.supported_families),
+            "params_schema": _params_schema_for_spec(spec),
+            "constraints": _constraints_for_spec(spec),
+        }
+        if include_policy and settings is not None:
+            entry["currently_permitted"] = _currently_permitted(
+                op_id,
+                readonly=bool(readonly),
+                allowed=allowed,
+            )
+        operations.append(entry)
+
+    result: dict[str, Any] = {"operations": operations}
+    if include_policy and settings is not None:
+        result["readonly"] = readonly
+        result["allowlist_parse_error"] = allowlist_parse_error
+    return result
 
 
 # ── Rate limiter ──────────────────────────────────────────────────────────────

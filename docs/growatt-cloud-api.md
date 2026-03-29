@@ -108,7 +108,7 @@ python scripts/test_integration.py --env-file /path/to/.env.test --server-url ht
 python scripts/test_integration.py --verbose
 ```
 
-The script boots the bridge in-process (no separate server needed), discovers plants/devices dynamically, exercises every read route, and runs dry-run `/validate` against every write operation. It prints a pass/fail/skip summary table. Exit code 0 = all passed or skipped; 1 = any failure.
+The script boots the bridge in-process (no separate server needed), discovers plants/devices dynamically, exercises every read route, and runs dry-run `/validate` against each registered write operation. It prints a pass/fail/skip summary table. Exit code 0 = all passed or skipped; 1 = any failure.
 
 **Note on demo token rate limits**: The public 2016 demo token is shared by many developers and may return `error_code: 10012` (`error_frequently_access`) if the token has been called too frequently. When rate-limited, the bridge correctly propagates the upstream failure as HTTP 502 and the script reports the `/api/v1/plants` check as FAIL. Health and info checks still pass. This is expected behavior when the upstream is unavailable.
 
@@ -116,21 +116,17 @@ The script boots the bridge in-process (no separate server needed), discovers pl
 
 Some plants return **`error_useTrueHostToSet` (10002)** on OpenAPI V1 `POST .../v1/tlxSet` even though reads work. The Shine web portal uses **`POST https://server.growatt.com/tcpSet.do`** with `action=tlxSet`, `serialNum`, a web-specific `type` field, and `param1`…`param19` (time segments use `param1`–`param6` only), plus session cookies after dashboard login.
 
-When **`GROWATT_LEGACY_WEB_MIN_WRITES=true`** (or `BRIDGE_LEGACY_WEB_MIN_WRITES`), the bridge sends **every** allowlisted MIN parameter write and **every** `set_time_segment` through that legacy path instead of OpenAPI. Configure **`GROWATT_WEB_BASE_URL`** (default `https://server.growatt.com/`), **`GROWATT_WEB_USERNAME`**, **`GROWATT_WEB_PASSWORD`** (plain password; hashed like `growattServer.hash_password`), and ensure a **resolved plant ID** (`?plant_id=` on command URLs or `GROWATT_PLANT_ID`). OpenAPI token auth is unchanged for reads and for writes when the flag is off.
+When **`GROWATT_LEGACY_WEB_MIN_WRITES=true`** (or `BRIDGE_LEGACY_WEB_MIN_WRITES`), the bridge sends **each** allowlisted MIN parameter write through that legacy path instead of OpenAPI. Configure **`GROWATT_WEB_BASE_URL`** (default `https://server.growatt.com/`), **`GROWATT_WEB_USERNAME`**, **`GROWATT_WEB_PASSWORD`** (plain password; hashed like `growattServer.hash_password`), and ensure a **resolved plant ID** (`?plant_id=` on command URLs or `GROWATT_PLANT_ID`). OpenAPI token auth is unchanged for reads and for writes when the flag is off.
 
 ### Legacy `tcpSet.do` `type` mapping (MIN writes)
 
 Web `type` strings are **not** the same as OpenAPI `parameter_id`. They are aligned with `tlxSetbean` / portal usage where possible. **Confirm with one DevTools capture per setting** on your plant if a write fails or no-ops.
 
+Only **`set_ac_charge_stop_soc`** is registered in the bridge today (see `OPERATION_REGISTRY` in `safety.py`). Other parameters may be added later with matching rows here.
+
 | Bridge operation | OpenAPI `parameter_id` (unchanged when legacy off) | Web `type` on `tcpSet.do` |
 |------------------|----------------------------------------------------|---------------------------|
 | `set_ac_charge_stop_soc` | `ac_charge_soc_limit` | `ub_ac_charging_stop_soc` |
-| `set_discharge_stop_soc` | `discharge_stop_soc` | `on_grid_discharge_stop_soc` |
-| `set_ac_charge_enable` | `ac_charge` | `ac_charge_enable` |
-| `set_charge_power` | `pv_active_p_rate` | `charge_power_command` |
-| `set_discharge_power` | `grid_first_discharge_power_rate` | `dis_charge_power_command` |
-| `set_export_limit` | `export_limit_power_rate` | `export_limit_power_rate` |
-| `set_time_segment` | (OpenAPI encodes slot) | `time_segment{N}` where *N* is 1–9 (same shape as growattServer `Min.write_time_segment`) |
 
 ## Known Gaps and Limitations
 

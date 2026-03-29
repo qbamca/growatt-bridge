@@ -37,7 +37,7 @@ curl -L -o docs/references/growatt-server-api-guide.pdf \
 - **URL**: https://growatt.pl/wp-content/uploads/2020/01/Growatt-Export-Limitation-Guide.pdf
 - **Source**: growatt.pl (Polish Growatt distributor)
 - **Local path**: `docs/references/growatt-export-limitation-guide.pdf`
-- **Contents**: Official guide to the export limit feature — meter wiring, RS485 connection, and parameter configuration. Essential before enabling `set_export_limit` on any installation.
+- **Contents**: Official guide to the export limit feature — meter wiring, RS485 connection, and parameter configuration. Essential before changing export-limit settings on any installation.
 
 ```bash
 curl -L -o docs/references/growatt-export-limitation-guide.pdf \
@@ -49,7 +49,7 @@ curl -L -o docs/references/growatt-export-limitation-guide.pdf \
 - **URL**: https://www.raystech.com.au/wp-content/uploads/TLX-Export-limit.pdf
 - **Source**: Raystech (Australian Growatt reseller)
 - **Local path**: `docs/references/tlx-export-limit.pdf`
-- **Contents**: Configuration guide specifically for the TLX/MIN family (type 7). Documents `exportLimit`, `exportLimitPowerRate`, and `backFlowSingleCtrl` parameters in detail. Required reading for the `set_export_limit` operation.
+- **Contents**: Configuration guide specifically for the TLX/MIN family (type 7). Documents `exportLimit`, `exportLimitPowerRate`, and `backFlowSingleCtrl` parameters in detail. Required reading before automating export limits.
 
 ```bash
 curl -L -o docs/references/tlx-export-limit.pdf \

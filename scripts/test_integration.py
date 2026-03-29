@@ -391,24 +391,7 @@ async def _run(server_url_override: str | None) -> int:
         print("\n[validate] Dry-run validate — no writes executed")
 
         validate_cases: list[tuple[str, dict[str, Any]]] = [
-            ("set_charge_power",      {"params": {"value": 80}}),
-            ("set_discharge_power",   {"params": {"value": 80}}),
-            ("set_discharge_stop_soc", {"params": {"value": 20}}),
-            ("set_ac_charge_enable",  {"params": {"enabled": True}}),
             ("set_ac_charge_stop_soc", {"params": {"value": 90}}),
-            ("set_export_limit",      {"params": {"value": 50, "meter_acknowledged": True}}),
-            (
-                "set_time_segment",
-                {
-                    "params": {
-                        "segment": 1,
-                        "mode": 0,
-                        "start_time": "00:00",
-                        "end_time": "23:59",
-                        "enabled": True,
-                    }
-                },
-            ),
         ]
 
         for op_id, payload in validate_cases:

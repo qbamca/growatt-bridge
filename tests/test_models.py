@@ -156,7 +156,7 @@ def test_command_request_with_params():
 def test_command_response_success():
     resp = CommandResponse(
         success=True,
-        operation="set_charge_power",
+        operation="set_ac_charge_stop_soc",
         device_sn="INV001",
         audit_id="uuid-1234",
     )
@@ -168,7 +168,7 @@ def test_command_response_success():
 def test_command_response_failure():
     resp = CommandResponse(
         success=False,
-        operation="set_charge_power",
+        operation="set_ac_charge_stop_soc",
         device_sn="INV001",
         audit_id="uuid-1234",
         error="API returned failure code: 0",
@@ -183,7 +183,7 @@ def test_command_response_failure():
 def test_validate_response_valid():
     v = ValidateResponse(
         valid=True,
-        operation="set_charge_power",
+        operation="set_ac_charge_stop_soc",
         device_sn="INV001",
         params={"value": 75},
     )
@@ -194,7 +194,7 @@ def test_validate_response_valid():
 def test_validate_response_invalid():
     v = ValidateResponse(
         valid=False,
-        operation="set_charge_power",
+        operation="set_ac_charge_stop_soc",
         device_sn="INV001",
         params={"value": 200},
         errors=["'value' must be ≤ 100, got 200.0."],

@@ -28,6 +28,10 @@ This design supports:
 - Future expansion to more manufacturers and models
 - Consistent behavior and semantics across different hardware
 
+## Agent skill
+
+- **[skill/SKILL.md](skill/SKILL.md)** — How AI agents should call this service (reads, writes, limits, security). Ship this file with deployments or symlink it into your Cursor skills directory if desired.
+
 ## Documentation
 
 - **[Growatt Cloud API](docs/growatt-cloud-api.md)** — Internal docs for Growatt Cloud API (Legacy and OpenAPI V1). Gathered and validated via `apps/growatt-api-explorer`.

@@ -328,6 +328,43 @@ class PlantDetail(PlantSummary):
     raw: dict[str, Any] | None = Field(None, exclude=True)
 
 
+# ── Write operations catalog (GET /api/v1/write-operations) ─────────────────
+
+
+class WriteOperationCatalogItem(BaseModel):
+    """One named write operation derived from the safety-layer registry."""
+
+    operation_id: str
+    description: str
+    supported_families: list[str]
+    params_schema: dict[str, Any] = Field(
+        ...,
+        description="Structured parameter shape (scalar or time_segment).",
+    )
+    constraints: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Reserved for operations that need extra caller acknowledgments.",
+    )
+    currently_permitted: bool | None = Field(
+        None,
+        description="Present when include_policy=true: allowed by readonly + allowlist.",
+    )
+
+
+class WriteOperationsCatalogResponse(BaseModel):
+    """Full catalog of write operations for agent discovery."""
+
+    operations: list[WriteOperationCatalogItem]
+    readonly: bool | None = Field(
+        None,
+        description="Mirrors BRIDGE_READONLY when include_policy=true.",
+    )
+    allowlist_parse_error: str | None = Field(
+        None,
+        description="Set when BRIDGE_WRITE_ALLOWLIST is invalid (include_policy=true).",
+    )
+
+
 # ── Standard error response ───────────────────────────────────────────────────
 
 
