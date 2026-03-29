@@ -8,7 +8,12 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from ..client import DeviceFamily, GrowattClient, UnsupportedDeviceFamilyError
+from ..client import (
+    DeviceFamily,
+    GrowattClient,
+    UnsupportedDeviceFamilyError,
+    format_growatt_cloud_error,
+)
 from ..config import Settings
 from ..models import NormalizedTelemetry
 from .devices import _resolve_plant_id
@@ -172,8 +177,9 @@ async def get_telemetry(
             detail=str(exc),
         ) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.error("device_detail(%s) for telemetry failed: %s", device_sn, exc)
-        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {exc}") from exc
+        detail = format_growatt_cloud_error(exc)
+        logger.error("device_detail(%s) for telemetry failed: %s", device_sn, detail)
+        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {detail}") from exc
 
     if family is DeviceFamily.MIN:
         return normalize_min_telemetry(device_sn, raw)

@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir --no-deps -e .
 
 # Copy skill and reference docs into the image
 COPY skill/ skill/
-COPY docs/references/ docs/references/
+COPY docs/ docs/
 
 # Audit log directory (mounted as a volume in production)
 RUN mkdir -p /var/log/growatt-bridge

@@ -14,7 +14,12 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from ..client import DeviceFamily, GrowattClient, UnsupportedDeviceFamilyError
+from ..client import (
+    DeviceFamily,
+    GrowattClient,
+    UnsupportedDeviceFamilyError,
+    format_growatt_cloud_error,
+)
 from ..config import Settings
 from ..models import NormalizedConfig, TimeSegment
 from .devices import _resolve_plant_id
@@ -222,19 +227,31 @@ async def get_config(
         except UnsupportedDeviceFamilyError:
             pass  # shouldn't happen for MIN, but be defensive
         except Exception as exc:  # noqa: BLE001
-            logger.warning("read_time_segments(%s) failed: %s", device_sn, exc)
+            logger.warning(
+                "read_time_segments(%s) failed: %s",
+                device_sn,
+                format_growatt_cloud_error(exc),
+            )
 
         # Also pull device detail to extract any available config fields
         try:
             detail_raw = client.device_detail(device_sn, family)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("device_detail(%s) for config failed: %s", device_sn, exc)
+            logger.warning(
+                "device_detail(%s) for config failed: %s",
+                device_sn,
+                format_growatt_cloud_error(exc),
+            )
 
     elif family is DeviceFamily.SPH:
         try:
             detail_raw = client.device_detail(device_sn, family)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("device_detail(%s) for config failed: %s", device_sn, exc)
+            logger.warning(
+                "device_detail(%s) for config failed: %s",
+                device_sn,
+                format_growatt_cloud_error(exc),
+            )
 
     else:
         raise HTTPException(
@@ -287,7 +304,8 @@ async def get_time_segments(
     except UnsupportedDeviceFamilyError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.error("read_time_segments(%s) failed: %s", device_sn, exc)
-        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {exc}") from exc
+        detail = format_growatt_cloud_error(exc)
+        logger.error("read_time_segments(%s) failed: %s", device_sn, detail)
+        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {detail}") from exc
 
     return _normalize_time_segments(raw_segs)

@@ -13,7 +13,12 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from ..client import DeviceFamily, GrowattClient, UnsupportedDeviceFamilyError
+from ..client import (
+    DeviceFamily,
+    GrowattClient,
+    UnsupportedDeviceFamilyError,
+    format_growatt_cloud_error,
+)
 from ..config import Settings
 from ..models import DeviceCapabilities, DeviceInfo
 from ..safety import OPERATION_REGISTRY
@@ -91,7 +96,8 @@ async def _resolve_plant_id(
     try:
         plants = client.plant_list()
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {exc}") from exc
+        detail = format_growatt_cloud_error(exc)
+        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {detail}") from exc
 
     for plant in plants:
         plant_id = str(
@@ -127,8 +133,9 @@ async def list_plant_devices(plant_id: str, request: Request) -> list[DeviceInfo
     try:
         devices = client.device_list(plant_id)
     except Exception as exc:  # noqa: BLE001
-        logger.error("device_list(%s) failed: %s", plant_id, exc)
-        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {exc}") from exc
+        detail = format_growatt_cloud_error(exc)
+        logger.error("device_list(%s) failed: %s", plant_id, detail)
+        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {detail}") from exc
 
     result: list[DeviceInfo] = []
     for dev in devices:
@@ -177,8 +184,9 @@ async def get_device(
             detail=str(exc),
         ) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.error("device_detail(%s) failed: %s", device_sn, exc)
-        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {exc}") from exc
+        detail = format_growatt_cloud_error(exc)
+        logger.error("device_detail(%s) failed: %s", device_sn, detail)
+        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {detail}") from exc
 
     info = _normalize_device_info(raw, family)
     if not info.device_sn:

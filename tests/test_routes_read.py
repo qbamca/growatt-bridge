@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 
 # ── GET /health ───────────────────────────────────────────────────────────────
 
 
-async def test_health_ok(async_client):
+@patch(
+    "growatt_bridge.routes.health.growatt_host_reachable",
+    return_value=(True, None),
+)
+async def test_health_ok(_mock_reach, async_client):
     ac, mock_client, settings, safety = async_client
-    mock_client.plant_list.return_value = [{"plant_id": "plant-1"}]
 
     resp = await ac.get("/health")
     assert resp.status_code == 200
@@ -20,9 +25,12 @@ async def test_health_ok(async_client):
     assert data["cloud_error"] is None
 
 
-async def test_health_degraded_on_cloud_error(async_client):
+@patch(
+    "growatt_bridge.routes.health.growatt_host_reachable",
+    return_value=(False, "connection refused"),
+)
+async def test_health_degraded_on_cloud_error(_mock_reach, async_client):
     ac, mock_client, settings, safety = async_client
-    mock_client.plant_list.side_effect = RuntimeError("connection refused")
 
     resp = await ac.get("/health")
     assert resp.status_code == 200

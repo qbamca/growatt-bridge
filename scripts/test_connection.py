@@ -30,7 +30,11 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(_REPO_ROOT / ".env")
 
 from growatt_bridge.config import Settings  # noqa: E402
-from growatt_bridge.client import GrowattClient, DeviceFamily  # noqa: E402
+from growatt_bridge.client import (  # noqa: E402
+    DeviceFamily,
+    GrowattClient,
+    format_growatt_cloud_error,
+)
 
 
 # ── Output helpers ────────────────────────────────────────────────────────────
@@ -95,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
         _print_section("plant_list response", plants)
         _ok(f"Found {len(plants)} plant(s)")
     except Exception as exc:
-        _fail(f"plant_list failed: {exc}")
+        _fail(f"plant_list failed: {format_growatt_cloud_error(exc)}")
         return 2
 
     if not plants:
@@ -121,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         _print_section(f"plant_details({plant_id!r})", details)
         _ok("plant_details OK")
     except Exception as exc:
-        _warn(f"plant_details failed (non-fatal): {exc}")
+        _warn(f"plant_details failed (non-fatal): {format_growatt_cloud_error(exc)}")
 
     # ── device_list ───────────────────────────────────────────────────────────
     print("\n[3/4] device_list")
@@ -130,7 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         _print_section(f"device_list({plant_id!r})", devices)
         _ok(f"Found {len(devices)} device(s)")
     except Exception as exc:
-        _fail(f"device_list failed: {exc}")
+        _fail(f"device_list failed: {format_growatt_cloud_error(exc)}")
         return 2
 
     if not devices:
@@ -190,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
             _print_section(label, result)
             _ok(f"{label} OK")
         except Exception as exc:
-            _warn(f"{label} failed (non-fatal): {exc}")
+            _warn(f"{label} failed (non-fatal): {format_growatt_cloud_error(exc)}")
 
     # ── TOU segments (MIN only) ───────────────────────────────────────────────
     if min_sn:
@@ -199,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
             _print_section(f"read_time_segments({min_sn!r})", segments)
             _ok(f"read_time_segments returned {len(segments)} segment(s)")
         except Exception as exc:
-            _warn(f"read_time_segments failed (non-fatal): {exc}")
+            _warn(f"read_time_segments failed (non-fatal): {format_growatt_cloud_error(exc)}")
 
     print(f"\n{'═' * 60}")
     print("  Smoke test complete. All required calls succeeded.")

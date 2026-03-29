@@ -14,7 +14,12 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from ..client import DeviceFamily, GrowattClient, UnsupportedDeviceFamilyError
+from ..client import (
+    DeviceFamily,
+    GrowattClient,
+    UnsupportedDeviceFamilyError,
+    format_growatt_cloud_error,
+)
 from ..config import Settings
 from ..models import CommandRequest, CommandResponse, ValidateResponse
 from ..safety import (
@@ -100,9 +105,10 @@ async def execute_command(
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
+        detail = format_growatt_cloud_error(exc)
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to detect device family: {exc}",
+            detail=f"Failed to detect device family: {detail}",
         ) from exc
 
     try:
@@ -201,9 +207,10 @@ async def validate_command(
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
+        detail = format_growatt_cloud_error(exc)
         raise HTTPException(
             status_code=502,
-            detail=f"Failed to detect device family: {exc}",
+            detail=f"Failed to detect device family: {detail}",
         ) from exc
 
     valid, errors = safety.dry_run_validate(
