@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
+from ..client import format_growatt_cloud_error
 from ..models import PlantDetail, PlantSummary
 
 logger = logging.getLogger(__name__)
@@ -55,8 +56,9 @@ async def list_plants(request: Request) -> list[PlantSummary]:
     try:
         plants = client.plant_list()
     except Exception as exc:  # noqa: BLE001
-        logger.error("plant_list failed: %s", exc)
-        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {exc}") from exc
+        detail = format_growatt_cloud_error(exc)
+        logger.error("plant_list failed: %s", detail)
+        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {detail}") from exc
     return [_normalize_plant_summary(p) for p in plants]
 
 
@@ -67,8 +69,9 @@ async def get_plant(plant_id: str, request: Request) -> PlantDetail:
     try:
         raw = client.plant_details(plant_id)
     except Exception as exc:  # noqa: BLE001
-        logger.error("plant_details(%s) failed: %s", plant_id, exc)
-        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {exc}") from exc
+        detail = format_growatt_cloud_error(exc)
+        logger.error("plant_details(%s) failed: %s", plant_id, detail)
+        raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {detail}") from exc
 
     if not raw:
         raise HTTPException(status_code=404, detail=f"Plant {plant_id!r} not found.")

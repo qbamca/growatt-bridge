@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import ValidationError
 
 from .client import GrowattClient, build_client_from_settings
 from .config import Settings
@@ -23,7 +24,15 @@ logging.basicConfig(
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """Initialise shared state on startup; clean up on shutdown."""
-    settings = Settings()  # type: ignore[call-arg]  # env-driven
+    try:
+        settings = Settings()  # type: ignore[call-arg]  # env-driven
+    except ValidationError as exc:
+        logger.error(
+            "Configuration failed (e.g. missing GROWATT_API_TOKEN). "
+            "Set env vars or mount a .env in the process working directory. Details: %s",
+            exc,
+        )
+        raise
     client = build_client_from_settings(settings)
     safety = SafetyLayer(settings, client)
 
@@ -48,7 +57,7 @@ def create_app() -> FastAPI:
             "HTTP bridge service wrapping Growatt OpenAPI V1 with safety layer. "
             "All writes are disabled by default (BRIDGE_READONLY=true)."
         ),
-        version="0.1.0",
+        version="0.2.0",
         lifespan=_lifespan,
     )
 

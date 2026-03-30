@@ -56,6 +56,28 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 
+def format_growatt_cloud_error(exc: BaseException) -> str:
+    """Format a Growatt SDK error for logs and HTTP responses (no secrets).
+
+    ``growattServer.GrowattV1ApiError`` carries ``error_code`` and ``error_msg``
+    from the OpenAPI JSON body; the exception's ``str()`` alone is often generic
+    (e.g. \"Error during getting plant list\").
+    """
+
+    v1_cls = getattr(growattServer, "GrowattV1ApiError", None)
+    if isinstance(v1_cls, type) and isinstance(exc, v1_cls):
+        base = str(exc).strip()
+        parts: list[str] = []
+        if exc.error_code is not None:
+            parts.append(f"error_code={exc.error_code}")
+        if exc.error_msg:
+            parts.append(f"error_msg={exc.error_msg!r}")
+        if parts:
+            return f"{base} ({', '.join(parts)})"
+        return base
+    return str(exc)
+
+
 # ── Client wrapper ─────────────────────────────────────────────────────────────
 
 class GrowattClient:
