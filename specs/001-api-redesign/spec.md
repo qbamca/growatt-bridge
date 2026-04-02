@@ -31,6 +31,7 @@ The following capabilities define the complete scope of the API surface. Each ca
 ### Session 2026-04-02
 
 - Q: What is the scope of the rate limit — per-device writes only (FR-010) or global? → A: Global per-user limit covering both read and write requests. Exact threshold is TBD; the safer/lower value must be chosen. The env var `BRIDGE_RATE_LIMIT` controls the limit and must default to a conservative value.
+- Q: What URL versioning strategy should the redesigned API use? → A: Header-based versioning — no URL prefix (endpoints remain at root); version is communicated via request/response headers. Specific header name (e.g. `Accept` media-type or custom `API-Version`) to be decided during planning.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -353,3 +354,4 @@ The bridge uses a two-layer session strategy:
 - Readonly mode (no writes) is the default; write mode requires explicit opt-in via environment configuration.
 - Plant ID and device SN are provided via environment configuration; the bridge does not discover them at runtime. A single plant and single device is the current target deployment.
 - `GET /devices` echoes the static configuration — it does not call the upstream Growatt API.
+- API versioning is header-based; no URL prefix (e.g. `/v1/`) is used. All endpoints are served at the root path. The specific version header mechanism (media-type `Accept` vs. custom `API-Version` header) will be decided during implementation planning.
