@@ -32,6 +32,7 @@ The following capabilities define the complete scope of the API surface. Each ca
 
 - Q: What is the scope of the rate limit — per-device writes only (FR-010) or global? → A: Global per-user limit covering both read and write requests. Exact threshold is TBD; the safer/lower value must be chosen. The env var `BRIDGE_RATE_LIMIT` controls the limit and must default to a conservative value.
 - Q: What URL versioning strategy should the redesigned API use? → A: Header-based versioning — no URL prefix (endpoints remain at root); version is communicated via request/response headers. Specific header name (e.g. `Accept` media-type or custom `API-Version`) to be decided during planning.
+- Q: What shape should the `BRIDGE_REQUIRE_READBACK` diff take in the write response? → A: A `readback` object with `changed_fields` map — each key is a field name with `before`/`after` values showing only the fields that changed. Primary purpose is confirming the write actually took effect. Omitted from response when `BRIDGE_REQUIRE_READBACK=false`.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -187,7 +188,7 @@ A developer or reporting consumer sends a request to retrieve past energy produc
 - **Device**: An inverter registered under a plant, identified by `device_sn`. Has a detected family (MIN, SPH, or UNKNOWN) that determines available operations.
 - **Operation**: A named write action (e.g., set-charge-time-segment). Must be on the allowlist; has per-family parameter schemas and safe-range constraints.
 - **Command Request**: The payload for a write operation — operation name plus parameters map.
-- **Command Response**: The result of a write — success flag, operation name, device SN, and optional detail.
+- **Command Response**: The result of a write — success flag, operation name, device SN, optional detail, and an optional `readback` object. The `readback` object contains a `changed_fields` map: `{"field_name": {"before": <old_value>, "after": <new_value>}}` listing only the fields that changed after the write. It is included when `BRIDGE_REQUIRE_READBACK=true` and omitted otherwise. Its purpose is confirming the write actually took effect on the device.
 - **Audit Entry**: An immutable record of a write attempt — timestamp, device SN, operation, parameters, and result.
 - **Device Parameters**: The current configuration settings of an inverter (e.g. charge time windows, work mode, charge current limits). Read via CAP-01, written via CAP-02.
 - **Telemetry Snapshot**: A point-in-time reading of live power flow data (PV generation, grid import/export, battery charge/discharge, load, and battery SOC where present). Returned by CAP-03.
