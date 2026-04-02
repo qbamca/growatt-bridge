@@ -28,6 +28,12 @@ The following capabilities define the complete scope of the API surface. Each ca
 - Q: Does the caller need to provide plant ID or device SN in requests, or does the bridge resolve them internally? → A: Plant ID and device SN are configured statically via environment variables; the bridge uses them for all upstream calls. The API exposes a `GET /devices` discovery endpoint that echoes the configured device(s) so callers can be self-orienting. The `{device_sn}` path parameter is validated against the configured value — unknown SNs return 404.
 - Q: Which upstream auth mechanism is used? → A: The Growatt OpenAPI V1 token approach is removed entirely. All upstream calls — reads and writes — go through the Shine web portal session (username + password via `newTwoLoginAPI.do`). The session is reused across requests and re-established reactively on auth failure (FR-017).
 
+### Session 2026-04-02
+
+- Q: What is the scope of the rate limit — per-device writes only (FR-010) or global? → A: Global per-user limit covering both read and write requests. Exact threshold is TBD; the safer/lower value must be chosen. The env var `BRIDGE_RATE_LIMIT` controls the limit and must default to a conservative value.
+- Q: What URL versioning strategy should the redesigned API use? → A: Header-based versioning — no URL prefix (endpoints remain at root); version is communicated via request/response headers. Specific header name (e.g. `Accept` media-type or custom `API-Version`) to be decided during planning.
+- Q: What shape should the `BRIDGE_REQUIRE_READBACK` diff take in the write response? → A: A `readback` object with `changed_fields` map — each key is a field name with `before`/`after` values showing only the fields that changed. Primary purpose is confirming the write actually took effect. Omitted from response when `BRIDGE_REQUIRE_READBACK=false`.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Discover available endpoints (Priority: P1)
@@ -146,7 +152,7 @@ A developer or reporting consumer sends a request to retrieve past energy produc
 
 - What happens when the Growatt upstream returns an unexpected response shape? Bridge must not expose raw upstream errors — it must normalize them into the standard error shape.
 - How does the bridge behave when a device serial belongs to a plant not covered by the configured API token? Return 404 with a clear scope message.
-- What happens if the same write operation is called at a rate exceeding safe limits? Return 429 with retry-after guidance.
+- What if a caller exceeds the global request rate limit (reads or writes)? Return 429 with `Retry-After` guidance.
 - What happens when a device family is detected as UNKNOWN? Endpoint must return an explicit unsupported response rather than a silent failure.
 - What if the bridge is misconfigured (missing API token)? Startup must fail with a clear configuration error, not a runtime 500.
 - What if the Shine web session expires mid-operation despite proactive refresh? The reactive fallback must detect the auth failure, log a WARNING, re-authenticate once, and retry — if the retry also fails, return a clear error to the caller with no further retries.
@@ -164,7 +170,7 @@ A developer or reporting consumer sends a request to retrieve past energy produc
 - **FR-007**: Each write endpoint MUST have a corresponding dry-run validate endpoint that exercises all validation checks without making upstream changes.
 - **FR-008**: The bridge MUST return a structured error response (consistent shape) for all error conditions — no raw upstream error messages exposed to callers.
 - **FR-009**: The bridge MUST log each write attempt (success or failure) in an append-only audit trail.
-- **FR-010**: The bridge MUST enforce a per-device write rate limit and return 429 with retry guidance when exceeded.
+- **FR-010**: The bridge MUST enforce a global per-user rate limit covering both read and write requests; any request from a given caller exceeding the configured threshold MUST return 429 with `Retry-After` guidance. The exact limit value is TBD and MUST be configurable via `BRIDGE_RATE_LIMIT`; the default MUST be a conservative (low) value.
 - **FR-011**: The bridge MUST expose a health endpoint that reports service liveness and readiness to connect to Growatt Cloud.
 - **FR-012**: The endpoint set MUST be defined and approved one at a time before implementation; each endpoint MUST have a passing test suite — executed against the real Growatt API — before the next endpoint is added.
 - **FR-013**: The bridge MUST expose a read-parameters endpoint (CAP-01) that returns the current inverter configuration settings in a normalized shape consistent across device families.
@@ -182,7 +188,7 @@ A developer or reporting consumer sends a request to retrieve past energy produc
 - **Device**: An inverter registered under a plant, identified by `device_sn`. Has a detected family (MIN, SPH, or UNKNOWN) that determines available operations.
 - **Operation**: A named write action (e.g., set-charge-time-segment). Must be on the allowlist; has per-family parameter schemas and safe-range constraints.
 - **Command Request**: The payload for a write operation — operation name plus parameters map.
-- **Command Response**: The result of a write — success flag, operation name, device SN, and optional detail.
+- **Command Response**: The result of a write — success flag, operation name, device SN, optional detail, and an optional `readback` object. The `readback` object contains a `changed_fields` map: `{"field_name": {"before": <old_value>, "after": <new_value>}}` listing only the fields that changed after the write. It is included when `BRIDGE_REQUIRE_READBACK=true` and omitted otherwise. Its purpose is confirming the write actually took effect on the device.
 - **Audit Entry**: An immutable record of a write attempt — timestamp, device SN, operation, parameters, and result.
 - **Device Parameters**: The current configuration settings of an inverter (e.g. charge time windows, work mode, charge current limits). Read via CAP-01, written via CAP-02.
 - **Telemetry Snapshot**: A point-in-time reading of live power flow data (PV generation, grid import/export, battery charge/discharge, load, and battery SOC where present). Returned by CAP-03.
@@ -197,7 +203,7 @@ A developer or reporting consumer sends a request to retrieve past energy produc
 - **SC-003**: Invalid write requests (out-of-range parameters, non-allowlisted operations) are rejected before reaching Growatt Cloud in 100% of cases.
 - **SC-004**: Each defined endpoint has full test coverage of its documented acceptance scenarios before the next endpoint enters development.
 - **SC-005**: The total number of accessible bridge endpoints exactly matches the explicitly approved endpoint list — verified by an automated surface-area test.
-- **SC-006**: Write rate limiting prevents exceeding the configured maximum write operations per device per time window in 100% of cases.
+- **SC-006**: The global per-user rate limit prevents any caller from exceeding the configured request threshold (reads + writes combined) in 100% of cases; excess requests receive 429 with `Retry-After`.
 - **SC-007**: All four capabilities (CAP-01 through CAP-04) have defined, empirically-validated endpoint contracts before any capability enters implementation.
 - **SC-008**: The telemetry endpoint (CAP-03) correctly includes battery fields for battery-equipped devices and omits them for non-battery devices.
 
@@ -335,7 +341,7 @@ The bridge uses a two-layer session strategy:
 | `BRIDGE_HOST` | `0.0.0.0` | HTTP bind address. |
 | `BRIDGE_READONLY` | `true` | When `true`, all write endpoints return 403. Must be set to `false` to enable writes. |
 | `BRIDGE_WRITE_ALLOWLIST` | *(empty)* | Comma-separated list of permitted write operation IDs. Empty means no writes even if `BRIDGE_READONLY=false`. |
-| `BRIDGE_RATE_LIMIT_WRITES` | `3` | Maximum write operations permitted per minute across all devices. |
+| `BRIDGE_RATE_LIMIT` | TBD (conservative) | Maximum requests (reads + writes) permitted per minute per caller. Default must be a conservative low value; exact threshold TBD. (Formerly `BRIDGE_RATE_LIMIT_WRITES`, which covered writes only.) |
 | `BRIDGE_REQUIRE_READBACK` | `true` | Re-reads device config after every write and includes the diff in the response. |
 | `BRIDGE_AUDIT_LOG` | `/var/log/growatt-bridge/audit.jsonl` | Path for the append-only JSONL write audit log. |
 
@@ -349,3 +355,4 @@ The bridge uses a two-layer session strategy:
 - Readonly mode (no writes) is the default; write mode requires explicit opt-in via environment configuration.
 - Plant ID and device SN are provided via environment configuration; the bridge does not discover them at runtime. A single plant and single device is the current target deployment.
 - `GET /devices` echoes the static configuration — it does not call the upstream Growatt API.
+- API versioning is header-based; no URL prefix (e.g. `/v1/`) is used. All endpoints are served at the root path. The specific version header mechanism (media-type `Accept` vs. custom `API-Version` header) will be decided during implementation planning.
