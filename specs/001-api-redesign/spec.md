@@ -5,11 +5,28 @@
 **Status**: Draft  
 **Input**: User description: "i want to redesign current API from scratch using my current experience. There will be a specific number of endpoints that i want to test and define one by one. The whole service is a facade for another API. I want to make it easier to work with, well documented and strictly controlled. Not all method and function are allowed."
 
+## Capability Inventory
+
+The following capabilities define the complete scope of the API surface. Each capability will be specified in detail empirically — one at a time, based on real data from the upstream Growatt API.
+
+| # | Capability | Category | Status |
+|---|------------|----------|--------|
+| CAP-01 | Read inverter parameters | Configuration read | To be detailed |
+| CAP-02 | Write inverter parameters | Configuration write | To be detailed |
+| CAP-03 | Current telemetry (incl. battery SOC where present) | Live data read | To be detailed |
+| CAP-04 | Historical energy data | Historical data read | To be detailed |
+
+**Note**: Details for each capability (exact fields, request/response shape, constraints) will be added to this spec iteratively as empirical data from the live Growatt API is collected.
+
+---
+
 ## Clarifications
 
 ### Session 2026-03-31
 
 - Q: Should endpoint tests run against the real Growatt API, a mock/stub, or both? → A: Real Growatt API only — tests hit the live upstream for every run.
+- Q: Does the caller need to provide plant ID or device SN in requests, or does the bridge resolve them internally? → A: Plant ID and device SN are configured statically via environment variables; the bridge uses them for all upstream calls. The API exposes a `GET /devices` discovery endpoint that echoes the configured device(s) so callers can be self-orienting. The `{device_sn}` path parameter is validated against the configured value — unknown SNs return 404.
+- Q: Which upstream auth mechanism is used? → A: The Growatt OpenAPI V1 token approach is removed entirely. All upstream calls — reads and writes — go through the Shine web portal session (username + password via `newTwoLoginAPI.do`). The session is reused across requests and re-established reactively on auth failure (FR-017).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -28,9 +45,25 @@ A developer integrating with the bridge needs to understand exactly which operat
 
 ---
 
-### User Story 2 - Read inverter telemetry (Priority: P2)
+### User Story 2 - Discover available devices (Priority: P1)
 
-A developer or automation consumer sends a request to the bridge to retrieve live power output and energy statistics for a specific device. The bridge returns a normalized, consistently shaped response — regardless of the Growatt device family (MIN vs SPH).
+An automation consumer or developer calls the bridge to find out which devices are available before making any device-specific requests. The bridge returns the list of configured devices with their serial numbers and detected families.
+
+**Why this priority**: Callers need to know valid device SNs before calling any device-scoped endpoint. This endpoint makes the API self-orienting without requiring out-of-band configuration knowledge.
+
+**Independent Test**: Can be fully tested by calling `GET /devices` and asserting the response contains at least one device entry with a serial number and family field.
+
+**Acceptance Scenarios**:
+
+1. **Given** the bridge is running with a configured device SN, **When** `GET /devices` is called, **Then** the response contains the configured device(s) with serial number and detected family.
+2. **Given** a caller uses a device SN returned by `GET /devices`, **When** they call any device-scoped endpoint, **Then** the request is accepted.
+3. **Given** a caller uses a device SN not in the `GET /devices` response, **When** they call any device-scoped endpoint, **Then** the bridge returns 404.
+
+---
+
+### User Story 4 - Read inverter telemetry (Priority: P2)
+
+A developer or automation consumer sends a request to the bridge to retrieve live power output and energy statistics for a specific device, including battery SOC where the device has a battery. The bridge returns a normalized, consistently shaped response — regardless of the Growatt device family (MIN vs SPH). Battery-related fields are included when present and omitted when the device has no battery.
 
 **Why this priority**: Telemetry reading is the most frequent use case and must work reliably before write operations are considered.
 
@@ -44,7 +77,7 @@ A developer or automation consumer sends a request to the bridge to retrieve liv
 
 ---
 
-### User Story 3 - Execute a permitted write command (Priority: P3)
+### User Story 5 - Execute a permitted write command (Priority: P3)
 
 An automation consumer sends a POST request to change an inverter setting (e.g. charge time window). The bridge validates the request against the explicit allowlist of permitted operations and parameter constraints, then forwards it to Growatt and returns a structured success/failure response.
 
@@ -61,7 +94,7 @@ An automation consumer sends a POST request to change an inverter setting (e.g. 
 
 ---
 
-### User Story 4 - Dry-run validate before writing (Priority: P3)
+### User Story 6 - Dry-run validate before writing (Priority: P3)
 
 A developer wants to verify their payload is correct before making a real change. They call a validate endpoint that checks all constraints (allowlist, parameter ranges, device family compatibility) without touching the inverter.
 
@@ -76,6 +109,39 @@ A developer wants to verify their payload is correct before making a real change
 
 ---
 
+### User Story 7 - Read inverter parameters (Priority: P2)
+
+A developer or automation consumer sends a request to retrieve the current configuration settings of a specific inverter (e.g. charge time windows, charge current limits, work mode). The bridge returns a normalized, consistently shaped response with the current parameter values.
+
+**Why this priority**: Reading current parameters is a prerequisite for safe write operations — callers need to know the current state before changing it. It is also a lower-risk operation than writing.
+
+**Independent Test**: Can be fully tested by calling the read-parameters endpoint for a known device serial number and asserting the response contains expected normalized configuration fields.
+
+**Acceptance Scenarios**:
+
+1. **Given** a valid device serial number, **When** a GET parameters request is made, **Then** the response contains normalized configuration fields with consistent names across device families.
+2. **Given** an unknown device serial number, **When** a GET parameters request is made, **Then** the bridge returns 404 with a descriptive error message.
+3. **Given** the upstream Growatt API is unreachable, **When** a parameters request is made, **Then** the bridge returns 502 with a clear upstream error description.
+
+---
+
+### User Story 8 - Read historical energy data (Priority: P3)
+
+A developer or reporting consumer sends a request to retrieve past energy production and consumption totals for a specific device over a defined time range (daily, monthly, or yearly granularity). The bridge returns a normalized list of time-bucketed energy records.
+
+**Why this priority**: Historical data is useful for reporting and dashboards but is not required for live monitoring or control — it can be added after live-data endpoints are stable.
+
+**Independent Test**: Can be fully tested by calling the historical data endpoint with a known device serial and date range, asserting the response contains a list of records with consistent time-bucket and energy fields.
+
+**Acceptance Scenarios**:
+
+1. **Given** a valid device serial number and a date range, **When** a GET historical data request is made with daily granularity, **Then** the response contains one normalized record per calendar day with energy totals.
+2. **Given** a valid device serial number, **When** a GET historical data request is made with monthly granularity, **Then** the response contains one normalized record per calendar month.
+3. **Given** a date range with no recorded data, **When** a GET historical data request is made, **Then** the bridge returns an empty list (not an error).
+4. **Given** an unknown device serial number, **When** a GET historical data request is made, **Then** the bridge returns 404.
+
+---
+
 ### Edge Cases
 
 - What happens when the Growatt upstream returns an unexpected response shape? Bridge must not expose raw upstream errors — it must normalize them into the standard error shape.
@@ -83,6 +149,7 @@ A developer wants to verify their payload is correct before making a real change
 - What happens if the same write operation is called at a rate exceeding safe limits? Return 429 with retry-after guidance.
 - What happens when a device family is detected as UNKNOWN? Endpoint must return an explicit unsupported response rather than a silent failure.
 - What if the bridge is misconfigured (missing API token)? Startup must fail with a clear configuration error, not a runtime 500.
+- What if the legacy Shine web session expires mid-operation? The bridge must detect the auth failure from the upstream response, re-authenticate once, and retry the write — if the retry also fails, return a clear error to the caller without further retries.
 
 ## Requirements *(mandatory)*
 
@@ -100,6 +167,13 @@ A developer wants to verify their payload is correct before making a real change
 - **FR-010**: The bridge MUST enforce a per-device write rate limit and return 429 with retry guidance when exceeded.
 - **FR-011**: The bridge MUST expose a health endpoint that reports service liveness and readiness to connect to Growatt Cloud.
 - **FR-012**: The endpoint set MUST be defined and approved one at a time before implementation; each endpoint MUST have a passing test suite — executed against the real Growatt API — before the next endpoint is added.
+- **FR-013**: The bridge MUST expose a read-parameters endpoint (CAP-01) that returns the current inverter configuration settings in a normalized shape consistent across device families.
+- **FR-014**: The bridge MUST expose a current-telemetry endpoint (CAP-03) that returns live power flow data in a normalized shape consistent across device families; battery SOC and state fields MUST be included when the device has a battery and omitted when it does not.
+- **FR-015**: The bridge MUST expose a historical-data endpoint (CAP-04) supporting at minimum daily and monthly granularity; it MUST return an empty list (not an error) when no data exists for the requested range.
+- **FR-016**: The specific fields, constraints, and request/response shapes for each capability (CAP-01 through CAP-04) MUST be defined empirically from live Growatt API data before the corresponding endpoint is implemented.
+- **FR-017**: The Shine web session MUST be reused across all upstream calls (reads and writes). On detecting an expired or invalid session — via a redirect to the login page or a `success: false` auth-failure body — the bridge MUST re-authenticate once and retry the original request. If the retry also fails, the bridge returns a clear error to the caller with no further retries.
+- **FR-018**: The bridge MUST expose a `GET /devices` endpoint that returns the list of configured devices with their serial numbers and detected families; no upstream discovery call is made — the response reflects the static configuration.
+- **FR-019**: All device-scoped endpoints MUST validate the `{device_sn}` path parameter against the configured device list and return 404 for any SN not in that list.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -109,6 +183,9 @@ A developer wants to verify their payload is correct before making a real change
 - **Command Request**: The payload for a write operation — operation name plus parameters map.
 - **Command Response**: The result of a write — success flag, operation name, device SN, and optional detail.
 - **Audit Entry**: An immutable record of a write attempt — timestamp, device SN, operation, parameters, and result.
+- **Device Parameters**: The current configuration settings of an inverter (e.g. charge time windows, work mode, charge current limits). Read via CAP-01, written via CAP-02.
+- **Telemetry Snapshot**: A point-in-time reading of live power flow data (PV generation, grid import/export, battery charge/discharge, load, and battery SOC where present). Returned by CAP-03.
+- **Historical Record**: A time-bucketed energy summary (daily or monthly totals) for a device. Returned by CAP-04.
 
 ## Success Criteria *(mandatory)*
 
@@ -120,12 +197,40 @@ A developer wants to verify their payload is correct before making a real change
 - **SC-004**: Each defined endpoint has full test coverage of its documented acceptance scenarios before the next endpoint enters development.
 - **SC-005**: The total number of accessible bridge endpoints exactly matches the explicitly approved endpoint list — verified by an automated surface-area test.
 - **SC-006**: Write rate limiting prevents exceeding the configured maximum write operations per device per time window in 100% of cases.
+- **SC-007**: All four capabilities (CAP-01 through CAP-04) have defined, empirically-validated endpoint contracts before any capability enters implementation.
+- **SC-008**: The telemetry endpoint (CAP-03) correctly includes battery fields for battery-equipped devices and omits them for non-battery devices.
+
+## Environment Variables
+
+### Required
+
+| Variable | Description |
+|----------|-------------|
+| `GROWATT_WEB_USERNAME` | Shine web portal username. Used for all upstream calls (reads and writes). |
+| `GROWATT_WEB_PASSWORD` | Shine web portal password (plain text; hashed before sending). Used for all upstream calls. |
+| `GROWATT_DEVICE_SN` | Device serial number. Used to scope all device endpoints and validate `{device_sn}` path parameters. |
+| `GROWATT_PLANT_ID` | Plant ID. Used internally for device family detection and write context cookies. |
+
+### Optional
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GROWATT_WEB_BASE_URL` | `https://server.growatt.com/` | Shine web portal base URL. |
+| `BRIDGE_PORT` | `8081` | HTTP listen port. |
+| `BRIDGE_HOST` | `0.0.0.0` | HTTP bind address. |
+| `BRIDGE_READONLY` | `true` | When `true`, all write endpoints return 403. Must be set to `false` to enable writes. |
+| `BRIDGE_WRITE_ALLOWLIST` | *(empty)* | Comma-separated list of permitted write operation IDs. Empty means no writes even if `BRIDGE_READONLY=false`. |
+| `BRIDGE_RATE_LIMIT_WRITES` | `3` | Maximum write operations permitted per minute across all devices. |
+| `BRIDGE_REQUIRE_READBACK` | `true` | Re-reads device config after every write and includes the diff in the response. |
+| `BRIDGE_AUDIT_LOG` | `/var/log/growatt-bridge/audit.jsonl` | Path for the append-only JSONL write audit log. |
 
 ## Assumptions
 
-- The upstream is Growatt OpenAPI V1; the redesign changes the bridge's external surface, not the upstream integration mechanism.
+- The Growatt OpenAPI V1 token approach is removed entirely; the bridge uses only the Shine web portal session (username/password) for all upstream communication.
 - The new endpoint set will be a strict subset of what the current bridge exposes — no new upstream Growatt capabilities are introduced in this redesign.
 - API consumers are automation clients or developers on a local/internal network; public internet exposure and caller authentication are out of scope.
 - Endpoints will be authored and approved one by one; this spec will be updated as each endpoint is finalized.
 - Device family auto-detection (MIN vs SPH) is retained from the current implementation; callers will not need to specify family.
 - Readonly mode (no writes) is the default; write mode requires explicit opt-in via environment configuration.
+- Plant ID and device SN are provided via environment configuration; the bridge does not discover them at runtime. A single plant and single device is the current target deployment.
+- `GET /devices` echoes the static configuration — it does not call the upstream Growatt API.
