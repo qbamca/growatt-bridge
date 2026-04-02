@@ -149,7 +149,7 @@ A developer or reporting consumer sends a request to retrieve past energy produc
 - What happens if the same write operation is called at a rate exceeding safe limits? Return 429 with retry-after guidance.
 - What happens when a device family is detected as UNKNOWN? Endpoint must return an explicit unsupported response rather than a silent failure.
 - What if the bridge is misconfigured (missing API token)? Startup must fail with a clear configuration error, not a runtime 500.
-- What if the legacy Shine web session expires mid-operation? The bridge must detect the auth failure from the upstream response, re-authenticate once, and retry the write — if the retry also fails, return a clear error to the caller without further retries.
+- What if the Shine web session expires mid-operation despite proactive refresh? The reactive fallback must detect the auth failure, log a WARNING, re-authenticate once, and retry — if the retry also fails, return a clear error to the caller with no further retries.
 
 ## Requirements *(mandatory)*
 
@@ -171,9 +171,10 @@ A developer or reporting consumer sends a request to retrieve past energy produc
 - **FR-014**: The bridge MUST expose a current-telemetry endpoint (CAP-03) that returns live power flow data in a normalized shape consistent across device families; battery SOC and state fields MUST be included when the device has a battery and omitted when it does not.
 - **FR-015**: The bridge MUST expose a historical-data endpoint (CAP-04) supporting at minimum daily and monthly granularity; it MUST return an empty list (not an error) when no data exists for the requested range.
 - **FR-016**: The specific fields, constraints, and request/response shapes for each capability (CAP-01 through CAP-04) MUST be defined empirically from live Growatt API data before the corresponding endpoint is implemented.
-- **FR-017**: The Shine web session MUST be reused across all upstream calls (reads and writes). On detecting an expired or invalid session — via a redirect to the login page or a `success: false` auth-failure body — the bridge MUST re-authenticate once and retry the original request. If the retry also fails, the bridge returns a clear error to the caller with no further retries.
-- **FR-018**: The bridge MUST expose a `GET /devices` endpoint that returns the list of configured devices with their serial numbers and detected families; no upstream discovery call is made — the response reflects the static configuration.
-- **FR-019**: All device-scoped endpoints MUST validate the `{device_sn}` path parameter against the configured device list and return 404 for any SN not in that list.
+- **FR-017**: The bridge MUST manage the Shine web session using a two-layer strategy: (1) **proactive** — decode the `exp` claim from `cpowerAuth` on login and re-authenticate before expiry so no request ever hits an expired session under normal conditions; (2) **reactive fallback** — if an upstream response signals an invalid session despite proactive refresh (redirect to login or `success: false` auth body), re-authenticate once and retry; if the retry also fails, return a clear error to the caller. Every reactive re-auth event MUST be logged at WARNING level with the triggering URL and response status to support future diagnosis.
+- **FR-018**: If login fails (`back.success` is `false`), the bridge MUST log an ERROR with the numeric code from `back.msg` and the human-readable reason from `back.error`, then halt startup — a bridge that cannot authenticate has no valid operating state.
+- **FR-019**: The bridge MUST expose a `GET /devices` endpoint that returns the list of configured devices with their serial numbers and detected families; no upstream discovery call is made — the response reflects the static configuration.
+- **FR-020**: All device-scoped endpoints MUST validate the `{device_sn}` path parameter against the configured device list and return 404 for any SN not in that list.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -199,6 +200,120 @@ A developer or reporting consumer sends a request to retrieve past energy produc
 - **SC-006**: Write rate limiting prevents exceeding the configured maximum write operations per device per time window in 100% of cases.
 - **SC-007**: All four capabilities (CAP-01 through CAP-04) have defined, empirically-validated endpoint contracts before any capability enters implementation.
 - **SC-008**: The telemetry endpoint (CAP-03) correctly includes battery fields for battery-equipped devices and omits them for non-battery devices.
+
+## Upstream API Contracts
+
+Empirically captured request/response contracts from the live Growatt server. Each entry is based on a real probe run and serves as the source of truth for implementation.
+
+---
+
+### Authentication — `POST /newTwoLoginAPI.do`
+
+**Source**: probe run 2026-04-02, `audit/explore/20260402_192218_login.json`
+
+#### Request
+
+```
+POST https://server.growatt.com/newTwoLoginAPI.do
+Content-Type: application/x-www-form-urlencoded
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `userName` | string | Growatt account username |
+| `password` | string | Password hashed with MD5 via `growattServer.hash_password()` — never sent in plain text |
+
+#### Response
+
+HTTP status is **always `200`** regardless of whether login succeeded or failed. Success is determined exclusively by `back.success`.
+
+The top-level key is `back`. All useful data is nested under it.
+
+**Success:**
+
+```json
+{
+  "back": {
+    "success": true,
+    "msg": "",
+    "data": [
+      { "plantId": "10581915", "plantName": "Dom" }
+    ],
+    "deviceCount": "7",
+    "user": {
+      "id": 3648131,
+      "accountName": "qbamca",
+      "area": "Europe",
+      "counrty": "Poland",
+      "timeZone": 8,
+      "serverUrl": "",
+      "rightlevel": 1,
+      "enabled": true,
+      "cpowerAuth": "<JWT>",
+      ...
+    }
+  }
+}
+```
+
+**Failure (wrong username or password):**
+
+```json
+{
+  "back": {
+    "success": false,
+    "msg": "501",
+    "error": "User Does Not Exist"
+  }
+}
+```
+
+- `back.msg` contains a **numeric error code string** (`"501"`), not a human-readable message
+- `back.error` contains the **human-readable reason** — this is the field to log and surface
+- Cookies (`JSESSIONID`, `SERVERID`, `SERVERCORSID`) are still set on failure — these are unauthenticated sessions and MUST be discarded
+
+**Fields used by the bridge:**
+
+| Field | Notes |
+|-------|-------|
+| `back.success` | `true` = login accepted; `false` = credentials rejected |
+| `back.msg` | Numeric error code string when `success` is `false` (e.g. `"501"`). Empty string on success. |
+| `back.error` | Human-readable error reason when `success` is `false` (e.g. `"User Does Not Exist"`). Absent on success. |
+| `back.data[].plantId` | Plant IDs accessible by this account |
+| `back.user.serverUrl` | Regional server override — if non-empty, subsequent calls must use this URL instead of `server.growatt.com`. Observed empty for EU accounts. |
+| `back.user.timeZone` | Server-side timezone offset (observed: `8` = UTC+8). Timestamps in responses are in this timezone. |
+| `back.user.cpowerAuth` | JWT whose `exp` claim gives the session expiry time. Decoded on login to schedule proactive re-authentication before the session expires. |
+
+**Fields intentionally ignored:**
+
+| Field | Reason |
+|-------|--------|
+| `back.deviceCount` | Counts all device types (loggers, meters, inverters) — not useful for inverter enumeration |
+| `back.user.token` | Redacted in saved response. Unused — session auth relies on cookies, not this token. |
+
+#### Session Cookies
+
+Three cookies are set on login and must be carried on all subsequent requests:
+
+| Cookie | Description |
+|--------|-------------|
+| `JSESSIONID` | Tomcat session identifier. Primary session token. |
+| `SERVERID` | Load balancer affinity — pins all requests to the same backend node. |
+| `SERVERCORSID` | Same value as `SERVERID`, set with `SameSite=None` for cross-origin contexts. |
+
+No `Max-Age` or `Expires` is set on any cookie — all are session cookies. The `cpowerAuth` JWT `exp` claim (observed TTL: **1 hour**) is used as a proxy for session lifetime.
+
+#### Session Management
+
+The bridge uses a two-layer session strategy:
+
+1. **Proactive re-auth (primary)**: On login, the `exp` claim is decoded from `cpowerAuth`. The bridge schedules re-authentication before that deadline — refreshing the session and all three cookies before any request fails due to expiry.
+
+2. **Reactive re-auth (fallback)**: If an upstream response indicates an expired or rejected session (redirect to login page, or `success: false` with an auth-related message) despite proactive refresh, the bridge re-authenticates once and retries the original request. If the retry also fails, the error is returned to the caller.
+
+3. **Logging**: Any reactive re-auth event MUST be logged at `WARNING` level with the triggering response status and URL. This creates an observable record for diagnosing cases where the proactive strategy proves insufficient (e.g. server-side session invalidation, TTL shorter than expected). See FR-017.
+
+---
 
 ## Environment Variables
 
