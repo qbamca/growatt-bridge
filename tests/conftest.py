@@ -29,6 +29,7 @@ sys.modules.setdefault("growattServer", _mock_growatt_module)
 from growatt_bridge.client import DeviceFamily, GrowattClient  # noqa: E402
 from growatt_bridge.config import Settings  # noqa: E402
 from growatt_bridge.main import create_app  # noqa: E402
+from growatt_bridge.routes.telemetry import clear_telemetry_cache  # noqa: E402
 from growatt_bridge.safety import SafetyLayer  # noqa: E402
 
 
@@ -105,6 +106,7 @@ def make_app(settings: Settings, mock_client: MagicMock) -> tuple:
 @pytest_asyncio.fixture
 async def async_client(tmp_path):
     """AsyncClient wired to a test app with mocked Growatt state."""
+    clear_telemetry_cache()
     settings = make_settings(bridge_audit_log=tmp_path / "audit.jsonl")
     mock_client = make_mock_client()
     app, safety = make_app(settings, mock_client)
@@ -116,6 +118,7 @@ async def async_client(tmp_path):
 @pytest_asyncio.fixture
 async def write_client(tmp_path):
     """AsyncClient with writes enabled (set_ac_charge_stop_soc allowlisted)."""
+    clear_telemetry_cache()
     settings = make_settings(
         bridge_readonly=False,
         bridge_write_allowlist="set_ac_charge_stop_soc",

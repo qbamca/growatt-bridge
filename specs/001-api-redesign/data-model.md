@@ -219,6 +219,161 @@ Immutable record per write attempt (FR-009).
 
 ---
 
+## TLX live telemetry (upstream, empirical)
+
+Logical **instantaneous and energy** readouts for TLX inverters. Distinct from [Device parameters (CAP-01)](#device-parameters-cap-01) (`readAllMinParam` / configuration).
+
+### How samples were captured
+
+| Script | Output (under `audit/explore/`) |
+|--------|----------------------------------|
+| `scripts/explore/fetch_tlx_telemetry.py` | `*_tlx_newTlxApi_system_status.json`, `*_tlx_newTlxApi_energy_overview.json`, optional `*_tlx_*_bdc.json` |
+
+**Programmatic web session** (`newTwoLoginAPI.do` + `JSESSIONID`, same as `tcpSet.do` / `readAllMinParam`):
+
+| Upstream | Role |
+|----------|------|
+| `POST newTlxApi.do?op=getSystemStatus_KW` with form `plantId`, `id` (= device SN) | Live power, voltages, SoC, mode — **conceptual match** for Shine panel `getTLXStatusData_bdc` |
+| `POST newTlxApi.do?op=getEnergyOverview` with same form | Today / cumulative energy (kWh strings) — **conceptual match** for `getTLXTotalData_bdc` |
+
+**Shine panel XHR** (browser `fetch` to `/panel/tlx/getTLXStatusData_bdc` and `getTLXTotalData_bdc` with `tlxSn`):
+
+- With **only** the API login session, the server may respond **302 → `error.do?errorMess=errorNoLogin`** (differs from `tcpSet.do` / `newTlxApi.do`, which accept the same cookies).
+- To capture **panel JSON** for diffing against `newTlxApi`, set **`GROWATT_BROWSER_COOKIE`** in `.env` to the full `Cookie` header from DevTools (after loading the logged-in SPA), then re-run the script; optional `*_tlx_*_bdc_follow.json` artifacts record follow-redirect behaviour.
+
+### Response envelope (`newTlxApi`, sampled 2026-04-03)
+
+Top-level keys include: `deviceType`, `msg`, `result`, `dtc`, `haveMeter`, `obj`, `normalPower`, `model`. Values inside `obj` are **strings** (including numerics).
+
+### `getSystemStatus_KW` → `obj` (field labels)
+
+Power fields use the **`unit`** string in `obj` (e.g. `kW`). Labels are inferred from `docs/parameter-glossary.md` naming conventions and live samples; Growatt does not publish a public field spec for this endpoint.
+
+#### State of charge (`SOC*` / `soc*`)
+
+| Key | Label |
+|-----|--------|
+| `SOC` | Battery state of charge — **primary / display** % (use for a single headline SoC). |
+| `soc1` | SoC for **battery module / stack 1** (per-module tracking). |
+| `soc2` | SoC for **battery module / stack 2** (often `0` if no second module). |
+| `SOC2` | Secondary SoC channel (API naming); aligns with the second reporting path; not a separate “total” from `SOC`. |
+| `socType` | Which SoC interpretation the portal uses (**enum** / selector). |
+
+#### Battery charge & discharge power (`chargePower*` / `pdisCharge*`)
+
+These are **battery DC paths**, not PV. **`chargePower`** is the aggregate; **`chargePower1` / `chargePower2`** split by path or module. **`pdisCharge`** is aggregate discharge; **`pdisCharge1` / `pdisCharge2`** split the same way.
+
+| Key | Label |
+|-----|--------|
+| `chargePower` | Total **battery charge** power (all paths). |
+| `chargePower1` | Charge power on **path / module 1**. |
+| `chargePower2` | Charge power on **path / module 2**. |
+| `pdisCharge` | Total **battery discharge** power. |
+| `pdisCharge1` | Discharge power on **path / module 1**. |
+| `pdisCharge2` | Discharge power on **path / module 2**. |
+
+#### PV strings (keep separate)
+
+| Key | Label |
+|-----|--------|
+| `vPv1` … `vPv4` | **PV string 1–4 DC voltage** (V). |
+| `pPv1` … `pPv4` | **PV string 1–4 DC power** (in `unit`). |
+| `ppv` | **Total PV power** (sum of strings in this snapshot). |
+
+#### Grid, load, and AC
+
+| Key | Label |
+|-----|--------|
+| `pac` | **AC power** (inverter AC port / output; convention matches glossary `pac`). |
+| `pLocalLoad` | **Local load** power. |
+| `pactouser` | **Grid → user / import** power. |
+| `pactogrid` | **Inverter → grid / export** power. |
+| `vac1` / `vAc1` | **Grid AC voltage** (L1); duplicate casing for the same measurement. |
+| `fAc` | **Grid AC frequency** (Hz). |
+| `upsVac1` / `upsFac` | **UPS / backup** AC voltage & frequency (often `0` when inactive). |
+
+#### Other `obj` keys (sampled payloads)
+
+| Key | Label |
+|-----|--------|
+| `tbModuleNum` | **Number of battery modules** / stacks reported. |
+| `vBat` | **Battery bus voltage** (HV pack side, as reported). |
+| `bMerterConnectFlag` | **Grid meter connected** flag (API typo “Merter”). |
+| `priorityChoose` | **Energy priority** mode (**enum**). |
+| `pex` | **External / auxiliary DC power** (Growatt uses `pex*` for EX ports on some products; confirm for TLX if metering-critical). |
+| `lost` | **Localization / status token** (e.g. `tlx.status.checking`) — not a numeric power. |
+| `dType` | **Device subtype** code (internal). |
+| `deviceType` | **Device type** code (may differ from plant list APIs — see glossary). |
+| `isRefreshBtnShow` | **Portal UI**: show manual refresh. |
+| `unit` | **Power unit** for `p*` fields (e.g. `kW`). |
+| `bmsBatteryEnergy` | **BMS battery energy** string (often cumulative, includes unit suffix in value). |
+| `status` | **High-level device status** code. |
+| `pmax` | **Rated / max AC power** capability. |
+| `uwSysWorkMode` | **System work mode** (**enum**). |
+| `prePto` | **Pre–permission-to-operate** / interconnection staging flag. |
+| `operatingMode` | **Operating mode** (**enum**). |
+| `wBatteryType` | **Battery product / chemistry** family code. |
+| `invStatus` | **Inverter status** / fault class code. |
+| `bdcStatus` | **Battery DC converter (BDC)** status. |
+| `isMasterOne` | **Multi-inverter: master** flag. |
+
+#### Label caveats
+
+- **`SOC` vs `soc1` / `soc2`:** use **`SOC`** for one user-facing %; use **`soc1` / `soc2`** for per-module views.
+- **`chargePower*` vs `pPv*`:** totals vs **string** powers — do not merge PV strings into battery charge fields.
+
+### `getEnergyOverview` → `obj` (labels)
+
+Values are **strings** (often kWh). Names follow cumulative / “today” patterns in `parameter-glossary.md` §3.4.
+
+| Key | Label |
+|-----|--------|
+| `epvToday` | **PV energy generated today**. |
+| `epvTotal` | **PV energy generated** (lifetime). |
+| `elocalLoadToday` | **Local load energy today**. |
+| `elocalLoadTotal` | **Local load energy** (lifetime). |
+| `echargetoday` | **Battery charge energy today** (note casing). |
+| `echargetotal` | **Battery charge energy** (lifetime). |
+| `edischargeToday` | **Battery discharge energy today**. |
+| `edischargeTotal` | **Battery discharge energy** (lifetime). |
+| `etoGridToday` | **Energy to grid today** (export). |
+| `etogridTotal` | **Energy to grid** (lifetime export). |
+| `isMasterOne` | **Multi-inverter: master** flag (when present on overview). |
+
+**Bridge direction:** Prefer **`newTlxApi.do`** for normalized telemetry in the redesigned API unless a requirement explicitly mirrors Shine panel widgets fed only by `getTLX*Data_bdc`.
+
+### Downstream TLX telemetry (keys passed to clients)
+
+The bridge **does not** forward the full `obj` from either upstream call. For TLX, the **only** upstream fields that may populate the downstream telemetry contract are listed below. All other keys documented in the **`getSystemStatus_KW`** and **`getEnergyOverview`** field tables above remain **diagnostic / exploratory** unless this list is extended by spec.
+
+**Instantaneous** (from `getSystemStatus_KW` → `obj`; power magnitudes follow `unit`, typically kW as strings):
+
+| Upstream key | Role |
+|--------------|------|
+| `SOC` | Battery state of charge (headline %) |
+| `chargePower` | Total battery **charge** power |
+| `pdisCharge` | Total battery **discharge** power |
+| `ppv` | Total **PV** power |
+| `pactouser` | Grid → user (**import**) power |
+| `pactogrid` | Inverter → grid (**export**) power |
+| `pLocalLoad` | **Local load** power |
+
+**Energy today** (from `getEnergyOverview` → `obj`; values are strings, typically kWh):
+
+| Upstream key | Role |
+|--------------|------|
+| `epvToday` | PV energy **today** |
+| `elocalLoadToday` | Local load energy **today** |
+| `echargetoday` | Battery charge energy **today** (preserve upstream casing) |
+| `edischargeToday` | Battery discharge energy **today** |
+| `etoGridToday` | Energy to grid **today** (export) |
+
+**Out of scope for this downstream set:** per-string PV (`pPv1`…`pPv4`, `vPv1`…`vPv4`), split charge/discharge (`chargePower1`/`2`, `pdisCharge1`/`2`), `soc1`/`soc2`, and **lifetime** counters on `getEnergyOverview` (`epvTotal`, `elocalLoadTotal`, `echargetotal`, `edischargeTotal`, `etogridTotal`, etc.) unless a future spec change adds them.
+
+**Sampling cadence:** Upstream status is treated as **~5 minute** resolution; downstream responses should respect the same freshness window (see implementation plan: cache / rate alignment).
+
+---
+
 ## Device parameters (CAP-01)
 
 Normalized map of configuration keys → values. Family-specific upstream names collapsed to **canonical** bridge field names (FR-003, FR-013).

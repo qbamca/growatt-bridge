@@ -25,6 +25,13 @@ _DEFAULT_UA = (
 
 _MIN_DEVICE_TYPE = "7"
 
+# Shine panel TLX telemetry (browser XHR to ``/panel/tlx/…_bdc``).
+_XHR_JSON_HEADERS = {
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+    "X-Requested-With": "XMLHttpRequest",
+}
+
 
 class LegacyShineWebError(Exception):
     """Raised when legacy web login or tcpSet fails in a non-HTTP way."""
@@ -200,4 +207,85 @@ class LegacyShineWebClient:
                 "param5": str(end_m),
                 "param6": "1" if enabled else "0",
             },
+        )
+
+    def new_tlx_api_post_raw(
+        self,
+        op: str,
+        form: dict[str, str],
+        *,
+        plant_id: str | None = None,
+        serial_num: str | None = None,
+    ) -> requests.Response:
+        """POST ``newTlxApi.do?op=…`` — TLX JSON APIs that accept the web session (see growattServer).
+
+        When *plant_id* and *serial_num* are provided, :meth:`set_plant_device_cookies`
+        is applied first (same portal context as ``tcpSet.do`` / panel XHR).
+        """
+        self.ensure_logged_in()
+        if plant_id is not None and serial_num is not None:
+            self.set_plant_device_cookies(plant_id, serial_num)
+        url = f"{self._base}newTlxApi.do"
+        return self._session.post(
+            url,
+            params={"op": op},
+            data=form,
+            timeout=self._timeout,
+        )
+
+    def get_tlx_status_data_bdc_raw(
+        self,
+        plant_id: str,
+        serial_num: str,
+        *,
+        allow_redirects: bool = True,
+    ) -> requests.Response:
+        """POST ``panel/tlx/getTLXStatusData_bdc`` — live TLX status (portal XHR).
+
+        **Note:** On ``server.growatt.com``, this path may return **302 → errorNoLogin**
+        unless the session includes the same cookies as a full browser session after
+        loading the SPA. For programmatic capture, prefer :meth:`new_tlx_api_post_raw`
+        with ``op=getSystemStatus_KW``. Optional browser cookie paste: set env
+        ``GROWATT_BROWSER_COOKIE`` in ``fetch_tlx_telemetry.py`` before calling.
+        """
+        self.ensure_logged_in()
+        self.set_plant_device_cookies(plant_id, serial_num)
+        url = f"{self._base}panel/tlx/getTLXStatusData_bdc?plantId={plant_id}"
+        headers = {
+            **_XHR_JSON_HEADERS,
+            "Referer": f"{self._base}index",
+        }
+        return self._session.post(
+            url,
+            data={"tlxSn": serial_num},
+            headers=headers,
+            timeout=self._timeout,
+            allow_redirects=allow_redirects,
+        )
+
+    def get_tlx_total_data_bdc_raw(
+        self,
+        plant_id: str,
+        serial_num: str,
+        *,
+        allow_redirects: bool = True,
+    ) -> requests.Response:
+        """POST ``panel/tlx/getTLXTotalData_bdc`` — TLX cumulative / total energy (portal XHR).
+
+        Same session caveats as :meth:`get_tlx_status_data_bdc_raw`. For programmatic
+        capture, prefer ``new_tlx_api_post_raw`` with ``op=getEnergyOverview``.
+        """
+        self.ensure_logged_in()
+        self.set_plant_device_cookies(plant_id, serial_num)
+        url = f"{self._base}panel/tlx/getTLXTotalData_bdc?plantId={plant_id}"
+        headers = {
+            **_XHR_JSON_HEADERS,
+            "Referer": f"{self._base}index",
+        }
+        return self._session.post(
+            url,
+            data={"tlxSn": serial_num},
+            headers=headers,
+            timeout=self._timeout,
+            allow_redirects=allow_redirects,
         )

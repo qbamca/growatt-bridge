@@ -254,3 +254,57 @@ async def test_get_device_capabilities_write_mode(tmp_path):
         data = resp.json()
         assert data["readonly"] is False
         assert data["supported_write_operations"] == ["set_ac_charge_stop_soc"]
+
+
+# ── GET /api/v1/devices/{sn}/telemetry ────────────────────────────────────────
+
+
+async def test_get_telemetry_cache_control(async_client):
+    from growatt_bridge.client import DeviceFamily
+
+    ac, mock_client, settings, safety = async_client
+    mock_client.detect_device_family.return_value = DeviceFamily.MIN
+    mock_client.device_detail.return_value = {
+        "device_sn": "INV001",
+        "deviceType": "7",
+        "ppv": 1000.0,
+    }
+
+    resp = await ac.get("/api/v1/devices/INV001/telemetry?plant_id=plant-1")
+    assert resp.status_code == 200
+    assert resp.headers.get("Cache-Control") == "private, max-age=300"
+    assert resp.json()["device_sn"] == "INV001"
+    assert mock_client.device_detail.call_count == 1
+
+
+async def test_get_telemetry_server_cache_second_hit_skips_upstream(async_client):
+    from growatt_bridge.client import DeviceFamily
+
+    ac, mock_client, settings, safety = async_client
+    mock_client.detect_device_family.return_value = DeviceFamily.MIN
+    mock_client.device_detail.return_value = {
+        "device_sn": "INV001",
+        "deviceType": "7",
+        "ppv": 1000.0,
+    }
+
+    r1 = await ac.get("/api/v1/devices/INV001/telemetry?plant_id=plant-1")
+    r2 = await ac.get("/api/v1/devices/INV001/telemetry?plant_id=plant-1")
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    assert r1.json() == r2.json()
+    assert mock_client.device_detail.call_count == 1
+
+
+async def test_get_telemetry_upstream_error_not_cached(async_client):
+    from growatt_bridge.client import DeviceFamily
+
+    ac, mock_client, settings, safety = async_client
+    mock_client.detect_device_family.return_value = DeviceFamily.MIN
+    mock_client.device_detail.side_effect = [RuntimeError("timeout"), RuntimeError("timeout")]
+
+    r1 = await ac.get("/api/v1/devices/INV001/telemetry?plant_id=plant-1")
+    r2 = await ac.get("/api/v1/devices/INV001/telemetry?plant_id=plant-1")
+    assert r1.status_code == 502
+    assert r2.status_code == 502
+    assert mock_client.device_detail.call_count == 2

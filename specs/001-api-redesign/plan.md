@@ -2,11 +2,19 @@
 
 **Branch**: `001-api-redesign` | **Date**: 2026-04-03 | **Spec**: `/home/qbamca/mechanical-joe/growatt-bridge/specs/001-api-redesign/spec.md`
 
-**Note**: This iteration focused on **CAP-02 inverter write parameters** in `data-model.md`: Shine `tcpSet.do` `tlxSet`, permission ordering, and an initial writable-parameter catalog. `research.md` §11 documents the same decision.
+**Note**: This iteration adds **TLX live telemetry** to `data-model.md` (empirical JSON from `newTlxApi.do` and documented behaviour of Shine panel `/panel/tlx/*_bdc` XHR). Earlier work covered **CAP-02 inverter write parameters**: Shine `tcpSet.do` `tlxSet`, permission ordering, and the writable-parameter catalog. `research.md` §11 documents the write-path decision.
 
 ## Summary
 
 The bridge exposes a **bounded** write surface: only explicitly modeled **`operation_id`** values may be sent upstream as Shine **`type=`** on **`POST …/tcpSet.do`** with **`action=tlxSet`**. On every write, the service applies **`BRIDGE_READONLY`** → **`BRIDGE_WRITE_ALLOWLIST`** (comma-separated `operation_id` list) → **validation** → upstream. The initial catalog covers **`ac_charge`**, **`ub_ac_charging_stop_soc`**, and **`time_segment1`…`time_segment9`** (nine TOU slots, one upstream `type` per slot). Full logical detail: `/home/qbamca/mechanical-joe/growatt-bridge/specs/001-api-redesign/data-model.md` (sections **Operation** and **Inverter write parameters (CAP-02)**).
+
+### Telemetry (empirical, 2026-04-03)
+
+- **Probe:** `scripts/explore/fetch_tlx_telemetry.py` saves artifacts under `audit/explore/` (gitignored).
+- **Stable upstream for programmatic session:** `POST newTlxApi.do` with `op=getSystemStatus_KW` (instantaneous TLX status) and `op=getEnergyOverview` (today / total energy counters). Same `newTwoLoginAPI` + plant/device cookie context as `readAllMinParam` / `tlxSet`.
+- **Shine UI parity:** In-browser `fetch()` targets `…/panel/tlx/getTLXStatusData_bdc` and `getTLXTotalData_bdc` (`tlxSn`, `plantId` query). Those routes returned **302 → not logged in** when using only API login cookies in the probe; capturing their JSON requires pasting **`GROWATT_BROWSER_COOKIE`** (full Cookie header from a logged-in browser tab). See **TLX live telemetry** in `data-model.md` for field tables and mapping notes.
+- **Downstream contract (TLX):** The bridge passes through **only** these upstream `obj` keys — **instantaneous:** `SOC`, `chargePower`, `pdisCharge`, `ppv`, `pactouser`, `pactogrid`, `pLocalLoad`; **energy today:** `epvToday`, `elocalLoadToday`, `echargetoday`, `edischargeToday`, `etoGridToday`. Full detail and exclusions: `data-model.md` section **Downstream TLX telemetry (keys passed to clients)**.
+- **Freshness:** Status data is meaningful at **~5 minute** resolution; responses should remain cached or rate-limited accordingly (no implementation change required in this doc beyond alignment with the bridge cache policy).
 
 ## Technical Context
 

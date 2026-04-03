@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
+from threading import Lock
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from ..client import (
     DeviceFamily,
@@ -21,6 +23,36 @@ from .devices import _resolve_plant_id
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["telemetry"])
+
+# Growatt status data is only meaningful at ~5 min resolution; avoid hammering the cloud.
+_TELEMETRY_CACHE_TTL_S = 300.0
+_TELEMETRY_CACHE_LOCK = Lock()
+# (plant_id, device_sn) -> (monotonic_time_at_fetch, payload)
+_TELEMETRY_CACHE: dict[tuple[str, str], tuple[float, NormalizedTelemetry]] = {}
+
+
+def clear_telemetry_cache() -> None:
+    """Drop all cached telemetry (for tests)."""
+    with _TELEMETRY_CACHE_LOCK:
+        _TELEMETRY_CACHE.clear()
+
+
+def _telemetry_cache_get(plant_id: str, device_sn: str) -> NormalizedTelemetry | None:
+    key = (plant_id, device_sn)
+    with _TELEMETRY_CACHE_LOCK:
+        hit = _TELEMETRY_CACHE.get(key)
+        if hit is None:
+            return None
+        fetched_at, payload = hit
+        if time.monotonic() - fetched_at >= _TELEMETRY_CACHE_TTL_S:
+            del _TELEMETRY_CACHE[key]
+            return None
+        return payload
+
+
+def _telemetry_cache_set(plant_id: str, device_sn: str, payload: NormalizedTelemetry) -> None:
+    with _TELEMETRY_CACHE_LOCK:
+        _TELEMETRY_CACHE[(plant_id, device_sn)] = (time.monotonic(), payload)
 
 
 # ── Field-mapping helpers ──────────────────────────────────────────────────────
@@ -145,6 +177,9 @@ def normalize_min_telemetry(device_sn: str, raw: dict[str, Any]) -> NormalizedTe
 # ── Route ──────────────────────────────────────────────────────────────────────
 
 
+_CACHE_CONTROL = "private, max-age=300"
+
+
 @router.get(
     "/api/v1/devices/{device_sn}/telemetry",
     response_model=NormalizedTelemetry,
@@ -153,6 +188,7 @@ def normalize_min_telemetry(device_sn: str, raw: dict[str, Any]) -> NormalizedTe
 async def get_telemetry(
     device_sn: str,
     request: Request,
+    response: Response,
     plant_id: str | None = Query(
         default=None,
         description="Plant ID containing this device. Defaults to GROWATT_PLANT_ID env var.",
@@ -162,12 +198,22 @@ async def get_telemetry(
 
     Normalizes PV power, AC output, battery, grid, energy counters, and
     temperatures into consistent snake_case fields with documented units.
+
+    Responses are **cached for 5 minutes** (server-side and ``Cache-Control``):
+    upstream status is treated as ~5 min resolution, so repeated calls do not
+    hit Growatt Cloud more than once per device per TTL window.
     """
     client: GrowattClient = request.app.state.client
     settings: Settings = request.app.state.settings
 
     resolved_plant_id = await _resolve_plant_id(client, device_sn, settings, hint=plant_id)
     family = client.detect_device_family(device_sn, resolved_plant_id)
+
+    response.headers["Cache-Control"] = _CACHE_CONTROL
+
+    cached = _telemetry_cache_get(resolved_plant_id, device_sn)
+    if cached is not None:
+        return cached
 
     try:
         raw = client.device_detail(device_sn, family)
@@ -182,7 +228,10 @@ async def get_telemetry(
         raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {detail}") from exc
 
     if family is DeviceFamily.MIN:
-        return normalize_min_telemetry(device_sn, raw)
+        out = normalize_min_telemetry(device_sn, raw)
+    else:
+        # SPH: best-effort, same field mapping (many fields overlap)
+        out = normalize_min_telemetry(device_sn, raw)
 
-    # SPH: best-effort, same field mapping (many fields overlap)
-    return normalize_min_telemetry(device_sn, raw)
+    _telemetry_cache_set(resolved_plant_id, device_sn, out)
+    return out
