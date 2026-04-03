@@ -29,20 +29,167 @@ Logical entities for the bridge API and persistence boundaries. Implementation u
 
 | Field | Type | Notes |
 |-------|------|--------|
-| `operation_id` | string | Stable ID (e.g. allowlist key). |
-| `parameter_schema` | map | Per-family constraints (FR-004, FR-006). |
+| `operation_id` | string | Stable bridge ID for one writable **parameter family**. For MVP it **may equal** the Shine `type=` string (e.g. `ac_charge`, `ub_ac_charging_stop_soc`, `time_segment1`…`time_segment9`) to keep mapping obvious; if names diverge later, maintain a fixed internal map from `operation_id` → upstream `type`. |
+| `upstream_type` | string | Value sent as `type=` on `tlxSet` (see [Inverter write parameters (CAP-02)](#inverter-write-parameters-cap-02)). |
+| `parameter_schema` | map | Constraints for `param1`…`paramN` / JSON payload fields (FR-004); may vary by **Device.family** when empirically required. |
 
-**Rules**: Not on allowlist → **404** listing permitted ops (FR-006). Readonly mode → **403** on any write (FR-005).
+**Permission checks (normative, every write):**
+
+1. **`BRIDGE_READONLY=true`** → **403** for any mutating write path (FR-005); no upstream call.
+2. **Configurable allowlist** — env **`BRIDGE_WRITE_ALLOWLIST`** is a comma-separated list of permitted **`operation_id`** values. If the requested operation is **not** in that set → **404** with a response that lists permitted operations (FR-006). Empty allowlist means **no** writes are permitted even when `BRIDGE_READONLY=false`.
+3. **Validation** — payload must match the schema for that operation (ranges, arity, types) → **422** with field-level errors if not (FR-004); rejection happens **before** any upstream `tcpSet.do` call.
+
+**Evolution**: New writable parameters are added by extending the **catalog** below, defining validation + upstream mapping, and **including the new `operation_id` in deployment config** (`BRIDGE_WRITE_ALLOWLIST`). No runtime discovery of arbitrary upstream `type=` strings — only explicitly modeled operations are valid.
+
+---
+
+## Inverter write parameters (CAP-02)
+
+Writes go to the Shine portal **`POST …/tcpSet.do`** with form body (application/x-www-form-urlencoded), **not** the OpenAPI token API. The bridge forwards only operations that pass the [permission checks](#operation-write-allowlist) above.
+
+### Upstream request shape (`tlxSet`)
+
+| Form field | Example / notes |
+|------------|-------------------|
+| `action` | `tlxSet` |
+| `serialNum` | Target inverter serial — bridge fills from configured / validated `{device_sn}` (must match `GROWATT_DEVICE_SN` / `GET /devices` for MVP). |
+| `type` | Upstream parameter key — examples: `ac_charge`, `ub_ac_charging_stop_soc`, `time_segment1`…`time_segment9` (see catalog). |
+| `param1` … `param6` | Integer or string slots as required by `type` (see catalog). Omitted slots are not sent. |
+
+**Illustrative raw bodies** (from live probes; serial is illustrative):
+
+```
+action=tlxSet&serialNum=TSS1F5M04Y&type=ac_charge&param1=0
+action=tlxSet&serialNum=TSS1F5M04Y&type=ub_ac_charging_stop_soc&param1=42
+action=tlxSet&serialNum=TSS1F5M04Y&type=time_segment1&param1=1&param2=05&param3=30&param4=06&param5=00&param6=1
+```
+
+(`time_segment2`…`time_segment9` use the same `param1`…`param6` layout; `type` and `param1` match the slot index — see below.)
+
+### Writable parameter catalog (initial subset)
+
+Only the operations below are in scope for the bridge **until** the spec adds more rows. Each row is one **allowlist entry** (`operation_id`). The service is **not** entitled to send any other `type=` via `tlxSet`.
+
+| `operation_id` | Upstream `type=` | Params | Meaning (informal) | CAP-01 read cross-ref |
+|----------------|------------------|--------|---------------------|------------------------|
+| `ac_charge` | `ac_charge` | `param1`: `0` / `1` | AC (grid) charging enable/disable. | `ac_charging.on` |
+| `ub_ac_charging_stop_soc` | `ub_ac_charging_stop_soc` | `param1`: integer | Stop AC charging at this battery SoC (%). | `ac_charging.stop_soc` |
+| `time_segment1` | `time_segment1` | `param1`…`param6` | TOU time segment **1** (see [TOU `time_segmentN` encoding](#tou-time_segmentn-encoding)). | `tou.slots[0]` (`i === 1`) |
+| `time_segment2` | `time_segment2` | `param1`…`param6` | TOU time segment **2**. | `tou.slots[1]` (`i === 2`) |
+| `time_segment3` | `time_segment3` | `param1`…`param6` | TOU time segment **3**. | `tou.slots[2]` (`i === 3`) |
+| `time_segment4` | `time_segment4` | `param1`…`param6` | TOU time segment **4**. | `tou.slots[3]` (`i === 4`) |
+| `time_segment5` | `time_segment5` | `param1`…`param6` | TOU time segment **5**. | `tou.slots[4]` (`i === 5`) |
+| `time_segment6` | `time_segment6` | `param1`…`param6` | TOU time segment **6**. | `tou.slots[5]` (`i === 6`) |
+| `time_segment7` | `time_segment7` | `param1`…`param6` | TOU time segment **7**. | `tou.slots[6]` (`i === 7`) |
+| `time_segment8` | `time_segment8` | `param1`…`param6` | TOU time segment **8**. | `tou.slots[7]` (`i === 8`) |
+| `time_segment9` | `time_segment9` | `param1`…`param6` | TOU time segment **9**. | `tou.slots[8]` (`i === 9`) |
+
+**Allowlisting TOU writes**: Operators add **`time_segment1`** through **`time_segment9`** (or any subset) to **`BRIDGE_WRITE_ALLOWLIST`**. Granting segment **N** implies that **`operation_id`** `time_segment{N}` is permitted — there is no separate “bulk TOU” operation; changing multiple slots requires one upstream `tlxSet` per slot (each subject to FR-022 serialization and FR-010 rate limits).
+
+#### TOU `time_segmentN` encoding
+
+Example for segment **1** (`param1=1&param2=05&param3=30&param4=06&param5=00&param6=1`). The same **`param2`…`param6` semantics** apply for **`time_segment2`…`time_segment9`**; **`param1` must equal N** (the slot index must match the chosen `operation_id` / `type`).
+
+| Param | Interpretation |
+|-------|----------------|
+| `param1` | Slot index — must equal **N** for `time_segmentN` (e.g. `5` when calling `type=time_segment5`). |
+| `param2`, `param3` | Start time — hour and minute (example: `05`, `30` → `05:30`). |
+| `param4`, `param5` | End time — hour and minute (example: `06`, `00` → `06:00`). |
+| `param6` | Segment active / mode flag (`0`/`1` or enum — confirm against device family empirically). |
+
+**Validation**: Safe ranges (SoC bounds, valid clock fields, allowed `param1` for `ac_charge`, **`param1 === N`** for `time_segmentN`, `N ∈ [1,9]`) are **per operation** and must be enforced before upstream submission (FR-004). Exact numeric bounds **TBD** from empirical tests (FR-016) where not already fixed by hardware docs.
+
+### Write endpoint (client HTTP)
+
+This is what **callers send to the bridge** (not the upstream Growatt form). Same JSON body is used for the **mutating** write and for the **dry-run validate** route (FR-007); only the path differs.
+
+| | |
+|--|--|
+| **Method / path (execute write)** | `POST /devices/{device_sn}/write` |
+| **Method / path (validate only)** | `POST /devices/{device_sn}/write/validate` |
+| **Path parameter** | `{device_sn}` — inverter serial; MUST match a device from `GET /devices` (FR-020). |
+
+**Headers (FR-021)**
+
+| Header | Value |
+|--------|--------|
+| `Accept` | MUST include a supported version, e.g. `application/vnd.growatt-bridge.v1+json` (see `contracts/versioning.md`). |
+| `Content-Type` | Same vendor JSON media type as the request body, e.g. `application/vnd.growatt-bridge.v1+json`. |
+
+**JSON body (required)** — object with exactly two top-level keys:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `operation` | string | **`operation_id`** from the [writable catalog](#writable-parameter-catalog-initial-subset) (e.g. `ac_charge`, `ub_ac_charging_stop_soc`, `time_segment3`). |
+| `parameters` | object | **Operation-specific** payload — only the keys listed for that `operation` below; unknown keys MUST be rejected (422). |
+
+Machine-readable schema: `contracts/write-request.schema.json`.
+
+**Normative `parameters` by `operation`**
+
+| `operation` | `parameters` keys | Types / rules |
+|---------------|-------------------|----------------|
+| `ac_charge` | `enabled` | boolean — `true` = AC charging on, `false` = off (maps to upstream `param1` `1`/`0`). |
+| `ub_ac_charging_stop_soc` | `stop_soc` | integer — stop AC charging at this state-of-charge (%); bridge enforces safe range per FR-004 / empirical bounds. |
+| `time_segment1` … `time_segment9` | `start`, `end`, `active` | `start` / `end`: strings **`HH:MM`** (24-hour, normalized, e.g. `"05:30"`). **`active`**: boolean. The segment index **N** is taken **only** from `operation` (`time_segment7` → slot 7); clients MUST NOT send a separate slot field. |
+
+**Examples**
+
+```http
+POST /devices/TSS1F5M04Y/write HTTP/1.1
+Host: localhost:8081
+Accept: application/vnd.growatt-bridge.v1+json
+Content-Type: application/vnd.growatt-bridge.v1+json
+```
+
+```json
+{
+  "operation": "ub_ac_charging_stop_soc",
+  "parameters": { "stop_soc": 42 }
+}
+```
+
+```json
+{
+  "operation": "time_segment1",
+  "parameters": {
+    "start": "05:30",
+    "end": "06:00",
+    "active": true
+  }
+}
+```
+
+```json
+{
+  "operation": "ac_charge",
+  "parameters": { "enabled": false }
+}
+```
+
+### Mapping client JSON to upstream `tlxSet`
+
+The bridge maps **`operation`** + **`parameters`** to Shine `POST …/tcpSet.do` (`action=tlxSet`, `type=…`, `param1`…). Slot index for TOU is **derived from `operation`** (`time_segmentN` → `param1 = N`).
+
+| `operation` | `parameters` → upstream |
+|-------------|-------------------------|
+| `ac_charge` | `enabled` → `param1` = `1` or `0` |
+| `ub_ac_charging_stop_soc` | `stop_soc` → `param1` |
+| `time_segmentN` | `start`/`end` split into hour/minute → `param2`…`param5`; `active` → `param6`; `param1` = **N** | [TOU encoding](#tou-time_segmentn-encoding) |
+
+Times MUST use **`HH:MM`** in JSON; invalid values → **422** before upstream.
 
 ---
 
 ## Command request
 
+Logical view of the **write JSON body** plus path context (same as [Write endpoint (client HTTP)](#write-endpoint-client-http)):
+
 | Field | Type | Notes |
 |-------|------|--------|
-| `operation` | string | Must be allowlisted. |
-| `parameters` | object | Key-value payload; validated before upstream (FR-004). |
-| `device_sn` | string | From path; must match configured device list. |
+| `operation` | string | **`operation_id`** from the [writable catalog](#writable-parameter-catalog-initial-subset); must appear in **`BRIDGE_WRITE_ALLOWLIST`** after readonly check. |
+| `parameters` | object | Shape defined per operation in the table **Normative `parameters` by `operation`**; serialized to upstream `param1`… |
+| `device_sn` | string | From path `{device_sn}`; must match configured device list (FR-020). |
 
 ---
 

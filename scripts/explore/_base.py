@@ -105,6 +105,20 @@ def save_response(
     return out_path
 
 
+def save_json_artifact(probe_name: str, payload: dict[str, Any]) -> Path:
+    """Save a structured dict to audit/explore/<timestamp>_<probe_name>.json (no HTTP response)."""
+    _RESPONSES_DIR.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = _RESPONSES_DIR / f"{ts}_{probe_name}.json"
+    envelope: dict[str, Any] = {
+        "probe": probe_name,
+        "timestamp": ts,
+        **payload,
+    }
+    out_path.write_text(json.dumps(envelope, indent=2, default=str))
+    return out_path
+
+
 def print_section(label: str, data: Any) -> None:
     print(f"\n{'─' * 60}")
     print(f"  {label}")

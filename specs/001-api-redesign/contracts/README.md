@@ -6,5 +6,6 @@ Machine- and human-readable contracts for the redesigned bridge HTTP API.
 |----------|---------|
 | [versioning.md](./versioning.md) | `Accept` / `Content-Type` version negotiation (FR-021) |
 | [error-envelope.schema.json](./error-envelope.schema.json) | JSON Schema for structured error bodies (FR-008) |
+| [write-request.schema.json](./write-request.schema.json) | JSON Schema for **`POST /devices/{device_sn}/write`** and **`…/write/validate`** bodies (CAP-02) |
 
 The running service also exposes **OpenAPI** (FastAPI) at `/docs` / `/openapi.json`; every permitted route must be documented with schemas and supported `Accept` values (FR-002).

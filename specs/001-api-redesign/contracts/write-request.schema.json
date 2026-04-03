@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://growatt-bridge.local/schemas/write-request.json",
+  "title": "Growatt Bridge write request body",
+  "description": "JSON body for POST /devices/{device_sn}/write and POST /devices/{device_sn}/write/validate (CAP-02). See data-model.md § Write endpoint (client HTTP).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["operation", "parameters"],
+  "properties": {
+    "operation": {
+      "type": "string",
+      "description": "operation_id from the writable catalog; must be listed in BRIDGE_WRITE_ALLOWLIST when executing a write.",
+      "enum": [
+        "ac_charge",
+        "ub_ac_charging_stop_soc",
+        "time_segment1",
+        "time_segment2",
+        "time_segment3",
+        "time_segment4",
+        "time_segment5",
+        "time_segment6",
+        "time_segment7",
+        "time_segment8",
+        "time_segment9"
+      ]
+    },
+    "parameters": {
+      "description": "Shape depends on operation (see allOf)."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "operation": { "const": "ac_charge" } },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["enabled"],
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "true = AC charging enabled, false = disabled."
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "operation": { "const": "ub_ac_charging_stop_soc" } },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["stop_soc"],
+            "properties": {
+              "stop_soc": {
+                "type": "integer",
+                "description": "Stop AC charging at this SoC (%). Exact min/max enforced at runtime per FR-004 / empirical contract."
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "pattern": "^time_segment[1-9]$"
+          }
+        },
+        "required": ["operation"]
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["start", "end", "active"],
+            "properties": {
+              "start": {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                "description": "Segment start, 24-hour local plant time (HH:MM)."
+              },
+              "end": {
+                "type": "string",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                "description": "Segment end, 24-hour local plant time (HH:MM)."
+              },
+              "active": {
+                "type": "boolean",
+                "description": "Segment enabled / active flag (maps to upstream param6)."
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

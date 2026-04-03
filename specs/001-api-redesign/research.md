@@ -95,3 +95,13 @@ Consolidated decisions for the Growatt Bridge API redesign. All items that were 
 **Decision**: **UTC** instants as **ISO 8601** in JSON (FR-025). Historical daily/monthly buckets: labels and boundaries defined per CAP-04 empirical contract (FR-016, FR-025).
 
 **Rationale**: Consistent automation client behavior across timezones.
+
+---
+
+## 11. Inverter writes — Shine `tcpSet.do` / `tlxSet`
+
+**Decision**: Configuration writes use **`POST {base}/tcpSet.do`** with **`action=tlxSet`**, **`serialNum`**, **`type=<upstream parameter key>`**, and **`param1`…`param6`** as required by that `type`. The bridge exposes a **small, explicit catalog** of supported operations — including **nine** TOU operations **`time_segment1`…`time_segment9`** (one upstream `type` per slot, same `param` layout) plus non-TOU rows; **`BRIDGE_WRITE_ALLOWLIST`** lists permitted **`operation_id`** values (aligned with upstream `type` for MVP). Every write runs **readonly check → allowlist check → validation → upstream** (see `data-model.md` CAP-02).
+
+**Rationale**: Matches captured portal traffic; keeps the bridge unable to send arbitrary `type=` strings; allowlist + validation satisfy FR-004/FR-005/FR-006.
+
+**Alternatives considered**: OpenAPI V1 write endpoints (rejected — spec uses Shine session only); passthrough of any `type` (rejected — violates “strictly controlled” and FR-006).
