@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://growatt-bridge.local/schemas/error-envelope.json",
+  "title": "Growatt Bridge Error Envelope",
+  "description": "Structured error body for HTTP error responses (FR-008). Field names are illustrative until implementation locks the canonical schema.",
+  "type": "object",
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Stable machine-readable error code (bridge-defined, not upstream raw strings)."
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable summary safe for clients (no raw upstream leakage)."
+        },
+        "details": {
+          "description": "Optional validation or context (e.g. field errors, supported media types)."
+        },
+        "retry_after_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Present for rate limiting (HTTP 429); MUST match Retry-After header (FR-008)."
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

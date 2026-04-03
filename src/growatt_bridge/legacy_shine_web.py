@@ -90,6 +90,42 @@ class LegacyShineWebClient:
         self._session.cookies.set("memoryDeviceType", str(device_type), domain=host, path=path)
         self._session.cookies.set("memoryDeviceSn", serial_num, domain=host, path=path)
 
+    def read_all_min_param_raw(
+        self,
+        plant_id: str,
+        serial_num: str,
+    ) -> requests.Response:
+        """POST tcpSet.do with ``action=readAllMinParam``; returns the HTTP response."""
+        self.ensure_logged_in()
+        self.set_plant_device_cookies(plant_id, serial_num)
+
+        url = f"{self._base}tcpSet.do"
+        headers = {
+            "Accept": "application/json, text/javascript, */*; q=0.01",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        data = {"action": "readAllMinParam", "serialNum": serial_num}
+        logger.debug("legacy tcpSet.do readAllMinParam serialNum=%s", serial_num)
+        return self._session.post(
+            url,
+            data=data,
+            headers=headers,
+            timeout=self._timeout,
+        )
+
+    def read_all_min_param(self, plant_id: str, serial_num: str) -> dict[str, Any]:
+        """POST tcpSet.do with action=readAllMinParam (MIN inverter settings snapshot)."""
+        resp = self.read_all_min_param_raw(plant_id, serial_num)
+        resp.raise_for_status()
+        text = resp.text.strip()
+        if not text:
+            return {}
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return {"success": False, "msg": text, "_non_json_body": True}
+
     def tcp_set_tlx(
         self,
         plant_id: str,
