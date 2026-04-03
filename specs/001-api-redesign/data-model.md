@@ -184,13 +184,66 @@ Times MUST use **`HH:MM`** in JSON; invalid values → **422** before upstream.
 
 ## Command request
 
-Logical view of the **write JSON body** plus path context (same as [Write endpoint (client HTTP)](#write-endpoint-client-http)):
+On the wire, the body is always **`{ "operation", "parameters" }`** (see [Write endpoint (client HTTP)](#write-endpoint-client-http)). For clients, codegen, and reviews it is easier to treat that as a **discriminated union**: `operation` selects which **`parameters`** interface applies. Path context is separate from the JSON body.
+
+**Path**
 
 | Field | Type | Notes |
 |-------|------|--------|
-| `operation` | string | **`operation_id`** from the [writable catalog](#writable-parameter-catalog-initial-subset); must appear in **`BRIDGE_WRITE_ALLOWLIST`** after readonly check. |
-| `parameters` | object | Shape defined per operation in the table **Normative `parameters` by `operation`**; serialized to upstream `param1`… |
-| `device_sn` | string | From path `{device_sn}`; must match configured device list (FR-020). |
+| `device_sn` | string | From `{device_sn}`; must match configured device list (FR-020). |
+
+**Body — named interfaces (normative field sets match [Normative `parameters` by `operation`](#normative-parameters-by-operation))**
+
+```typescript
+/** POST …/devices/{device_sn}/write (+ /validate): JSON body */
+type WriteCommandBody =
+  | AcChargeCommand
+  | UbAcChargingStopSocCommand
+  | TimeSegmentCommand;
+
+interface AcChargeCommand {
+  operation: "ac_charge";
+  parameters: {
+    /** `true` = AC charging on, `false` = off */
+    enabled: boolean;
+  };
+}
+
+interface UbAcChargingStopSocCommand {
+  operation: "ub_ac_charging_stop_soc";
+  parameters: {
+    /** Stop AC charging at this SoC (%) — bridge enforces safe range (FR-004) */
+    stop_soc: number;
+  };
+}
+
+/** One of time_segment1 … time_segment9 — slot N is implied by operation, not repeated in parameters */
+type TimeSegmentOperation =
+  | "time_segment1"
+  | "time_segment2"
+  | "time_segment3"
+  | "time_segment4"
+  | "time_segment5"
+  | "time_segment6"
+  | "time_segment7"
+  | "time_segment8"
+  | "time_segment9";
+
+interface TimeSegmentCommand {
+  operation: TimeSegmentOperation;
+  parameters: {
+    /** 0 = load-first, 1 = battery-first, 2 = grid-first — maps to upstream param1 */
+    mode: 0 | 1 | 2;
+    /** Local plant time, 24h `HH:MM` */
+    start: string;
+    end: string;
+    /** Maps to upstream param6 */
+    active: boolean;
+  };
+}
+```
+
+**Dispatch rule**: after **`BRIDGE_READONLY`** / **`BRIDGE_WRITE_ALLOWLIST`** checks, validate **`parameters`** against the interface for **`operation`**; unknown keys → **422**. Serialization to upstream `param1`… follows [Mapping client JSON to upstream `tlxSet`](#mapping-client-json-to-upstream-tlxset).
 
 ---
 
