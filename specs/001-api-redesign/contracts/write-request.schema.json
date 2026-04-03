@@ -85,8 +85,14 @@
           "parameters": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["start", "end", "active"],
+            "required": ["mode", "start", "end", "active"],
             "properties": {
+              "mode": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2,
+                "description": "Energy priority for this segment (maps to upstream param1): 0 = load-first, 1 = battery-first, 2 = grid-first."
+              },
               "start": {
                 "type": "string",
                 "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",

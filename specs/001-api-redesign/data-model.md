@@ -64,7 +64,7 @@ action=tlxSet&serialNum=TSS1F5M04Y&type=ub_ac_charging_stop_soc&param1=42
 action=tlxSet&serialNum=TSS1F5M04Y&type=time_segment1&param1=1&param2=05&param3=30&param4=06&param5=00&param6=1
 ```
 
-(`time_segment2`…`time_segment9` use the same `param1`…`param6` layout; `type` and `param1` match the slot index — see below.)
+(`time_segment2`…`time_segment9` use the same `param1`…`param6` layout; the **slot index N** is selected only by **`type=time_segmentN`** — see [TOU `time_segmentN` encoding](#tou-time_segmentn-encoding).)
 
 ### Writable parameter catalog (initial subset)
 
@@ -88,16 +88,16 @@ Only the operations below are in scope for the bridge **until** the spec adds mo
 
 #### TOU `time_segmentN` encoding
 
-Example for segment **1** (`param1=1&param2=05&param3=30&param4=06&param5=00&param6=1`). The same **`param2`…`param6` semantics** apply for **`time_segment2`…`time_segment9`**; **`param1` must equal N** (the slot index must match the chosen `operation_id` / `type`).
+Example for **`type=time_segment1`** (`param1=1&param2=05&param3=30&param4=06&param5=00&param6=1`): segment **1**, **battery-first** priority (`param1=1`), **05:30–06:00**, segment **enabled** (`param6=1`). The same **`param1`…`param6` semantics** apply for **`time_segment2`…`time_segment9`**; only the **`type`** name changes to select the slot (**N**).
 
 | Param | Interpretation |
 |-------|----------------|
-| `param1` | Slot index — must equal **N** for `time_segmentN` (e.g. `5` when calling `type=time_segment5`). |
+| `param1` | **Energy priority / dispatch mode** for this segment (maps to read-side `time{N}Mode` and bridge JSON **`mode`**): **`0`** = **load-first** — prioritize supplying household loads from available PV / battery before other goals; **`1`** = **battery-first** — prioritize charging or managing the battery within this window; **`2`** = **grid-first** — prioritize grid import/export behavior for this segment (e.g. timed grid charging when AC charge is enabled — see device docs). |
 | `param2`, `param3` | Start time — hour and minute (example: `05`, `30` → `05:30`). |
 | `param4`, `param5` | End time — hour and minute (example: `06`, `00` → `06:00`). |
-| `param6` | Segment active / mode flag (`0`/`1` or enum — confirm against device family empirically). |
+| `param6` | Segment **enabled** (`0` = disabled, `1` = enabled). |
 
-**Validation**: Safe ranges (SoC bounds, valid clock fields, allowed `param1` for `ac_charge`, **`param1 === N`** for `time_segmentN`, `N ∈ [1,9]`) are **per operation** and must be enforced before upstream submission (FR-004). Exact numeric bounds **TBD** from empirical tests (FR-016) where not already fixed by hardware docs.
+**Validation**: Safe ranges (SoC bounds, valid clock fields, allowed `param1` for `ac_charge`, **`param1 ∈ {0,1,2}`** for `time_segmentN`, slot **`N ∈ [1,9]`** implied by **`type`**) are **per operation** and must be enforced before upstream submission (FR-004). Exact numeric bounds **TBD** from empirical tests (FR-016) where not already fixed by hardware docs.
 
 ### Write endpoint (client HTTP)
 
@@ -131,7 +131,7 @@ Machine-readable schema: `contracts/write-request.schema.json`.
 |---------------|-------------------|----------------|
 | `ac_charge` | `enabled` | boolean — `true` = AC charging on, `false` = off (maps to upstream `param1` `1`/`0`). |
 | `ub_ac_charging_stop_soc` | `stop_soc` | integer — stop AC charging at this state-of-charge (%); bridge enforces safe range per FR-004 / empirical bounds. |
-| `time_segment1` … `time_segment9` | `start`, `end`, `active` | `start` / `end`: strings **`HH:MM`** (24-hour, normalized, e.g. `"05:30"`). **`active`**: boolean. The segment index **N** is taken **only** from `operation` (`time_segment7` → slot 7); clients MUST NOT send a separate slot field. |
+| `time_segment1` … `time_segment9` | `mode`, `start`, `end`, `active` | **`mode`**: integer **`0`**, **`1`**, or **`2`** — load-first / battery-first / grid-first (maps to upstream **`param1`**; see [TOU encoding](#tou-time_segmentn-encoding)). `start` / `end`: strings **`HH:MM`** (24-hour, normalized, e.g. `"05:30"`). **`active`**: boolean (maps to **`param6`**). The segment index **N** is taken **only** from `operation` (`time_segment7` → slot 7); clients MUST NOT send a separate slot field. |
 
 **Examples**
 
@@ -153,6 +153,7 @@ Content-Type: application/vnd.growatt-bridge.v1+json
 {
   "operation": "time_segment1",
   "parameters": {
+    "mode": 1,
     "start": "05:30",
     "end": "06:00",
     "active": true
@@ -169,13 +170,13 @@ Content-Type: application/vnd.growatt-bridge.v1+json
 
 ### Mapping client JSON to upstream `tlxSet`
 
-The bridge maps **`operation`** + **`parameters`** to Shine `POST …/tcpSet.do` (`action=tlxSet`, `type=…`, `param1`…). Slot index for TOU is **derived from `operation`** (`time_segmentN` → `param1 = N`).
+The bridge maps **`operation`** + **`parameters`** to Shine `POST …/tcpSet.do` (`action=tlxSet`, `type=…`, `param1`…). For TOU, the slot index **N** is **derived from `operation`** (`time_segmentN` → **`type=time_segmentN`** only — not sent as `param1`).
 
 | `operation` | `parameters` → upstream |
 |-------------|-------------------------|
 | `ac_charge` | `enabled` → `param1` = `1` or `0` |
 | `ub_ac_charging_stop_soc` | `stop_soc` → `param1` |
-| `time_segmentN` | `start`/`end` split into hour/minute → `param2`…`param5`; `active` → `param6`; `param1` = **N** | [TOU encoding](#tou-time_segmentn-encoding) |
+| `time_segmentN` | `mode` → **`param1`** (`0`/`1`/`2`); `start`/`end` → hour/minute → `param2`…`param5`; `active` → `param6` | [TOU encoding](#tou-time_segmentn-encoding) |
 
 Times MUST use **`HH:MM`** in JSON; invalid values → **422** before upstream.
 
