@@ -19,7 +19,7 @@ Redesign the Growatt bridge HTTP API as a **strict, documented facade** over the
 **Project Type**: web-service (HTTP API facade)  
 **Performance Goals**: Correctness and upstream contract compliance over throughput; concurrent inbound requests are queued; bounded by global serialization + sliding-window upstream cap  
 **Constraints**: At most one outbound Growatt HTTP request in flight (FR-022); sliding 60s window upstream budget (FR-010); no raw upstream errors to clients (FR-008); UTC ISO 8601 for instants (FR-025); no Prometheus metrics in MVP (FR-023); no write idempotency in MVP (FR-024)  
-**Scale/Scope**: Single plant / single configured device via env; endpoint set grows incrementally with empirical CAP contracts (CAP-01–CAP-04)
+**Scale/Scope**: Single plant / single configured device via env; endpoint set grows incrementally with empirical CAP contracts (CAP-01–CAP-04). **CAP-01 read** returns a **curated subset** of settings only (AC charging, battery charge/power, general battery mode, normal TOU excluding season/special, grid export) — see `data-model.md`.
 
 ## Constitution Check
 
