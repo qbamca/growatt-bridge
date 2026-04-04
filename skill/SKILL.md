@@ -88,6 +88,40 @@ New operations may be added to the registry after integration testing; unregiste
 | 429 | Write rate limit |
 | 502 | Cloud / family detection failure |
 
+## Telemetry response fields
+
+`GET /api/v1/devices/{device_sn}/telemetry` returns a normalized snapshot. All power values in **W**, energy in **kWh**, voltage in **V**, current in **A**, frequency in **Hz**, SOC in **%**, temperature in **°C**. Fields are `null` when absent from the Growatt response.
+
+Raw Growatt key names (from `newTlxApi.do?op=getTlxDetailData`):
+
+| Normalized field | Raw Growatt key | Description |
+|---|---|---|
+| `ppv` | `ppv` | Total PV input power |
+| `vpv1` / `vpv2` | `vpv1` / `vpv2` | PV string 1/2 voltage |
+| `ipv1` / `ipv2` | `ipv1` / `ipv2` | PV string 1/2 current |
+| `pac` | `pac` | Total AC output power |
+| `vac1/2/3` | `vac1` / `vac2` / `vac3` | AC phase 1/2/3 voltage |
+| `iac1/2/3` | `iac1` / `iac2` / `iac3` | AC phase 1/2/3 current |
+| `fac` | `fac` | Grid frequency |
+| `soc` | `bdc1Soc` | Battery state of charge (BDC module 1) |
+| `p_charge` | `bdc1ChargePower` | Battery charge power |
+| `p_discharge` | `bdc1DischargePower` | Battery discharge power |
+| `v_bat` | `bdc1Vbat` | Battery voltage |
+| `i_bat` | `bdc1Ibat` | Battery current (negative = discharging) |
+| `p_to_grid` | `pacToGridTotal` | Power exported to grid |
+| `p_to_user` | `pacToUserTotal` | Power imported from grid |
+| `e_today` | `eacToday` | AC energy generated today |
+| `e_total` | `eacTotal` | Total AC energy generated |
+| `e_charge_today` | `echargeToday` | Battery energy charged today |
+| `e_discharge_today` | `edischargeToday` | Battery energy discharged today |
+| `e_to_grid_today` | `etoGridToday` | Energy exported to grid today |
+| `e_from_grid_today` | `etoUserToday` | Energy imported from grid today |
+| `temp1` | `temp1` | Inverter temperature sensor 1 |
+| `temp2` | `temp2` | Inverter temperature sensor 2 |
+| `status_code` | `status` | Raw inverter status integer |
+| `status_text` | `statusText` | Human-readable status (`Normal`, `Standby`, `Fault`, …) |
+| `lost` | `lost` | `true` when device is offline per cloud |
+
 ## Limitations
 
 - **No raw parameter API** — only registry operations.
