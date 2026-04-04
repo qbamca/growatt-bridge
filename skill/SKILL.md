@@ -20,8 +20,8 @@ HTTP bridge around **Growatt OpenAPI V1** with a **safety layer**: writes are **
 ## Base URL and health
 
 - Default listen port **`8081`** (see `docker-compose.yaml`, `BRIDGE_PORT`).
-- **`GET /health`** — process up; `plant_list` checks cloud reachability.
-- **`GET /info`** — package version, `readonly`, parsed allowlist, default device/plant from env.
+- **`GET /health`** — unauthenticated host connectivity check (DNS/TLS to `GROWATT_SERVER_URL` only, no API call); returns `cloud_reachable` and `status` (`ok` / `degraded`).
+- **`GET /info`** — package version, `readonly`, `allowed_write_operations` (parsed allowlist), default device/plant from env.
 
 ## Architecture (mental model)
 
@@ -63,16 +63,19 @@ The shipped binary only registers operations that have been **integration-tested
 
 | operation_id | Params (body `params`) |
 |--------------|-------------------------|
-| `set_ac_charge_stop_soc` | `value` (integer **10–100**) — SOC at which AC (grid) charging stops |
+| `set_ac_charge_enable` | `enabled` (boolean) — enable or disable AC (grid-to-battery) charging |
+| `set_ac_charge_stop_soc` | `value` (integer **10–100**) — SOC target at which AC (grid) charging stops |
+| `set_on_grid_discharge_stop_soc` | `value` (integer **10–100**) — SOC at which on-grid discharging stops |
+| `set_time_segment` | `segment` (integer **1–9**), `mode` (integer **0**=load\_first / **1**=battery\_first / **2**=grid\_first), `start_time` (HH:MM), `end_time` (HH:MM), `enabled` (boolean, default `true`) |
 
-More operations may be added to the registry after testing; until then they return **404** as unknown `operation_id`.
+New operations may be added to the registry after integration testing; unregistered `operation_id` values return **404**.
 
 ## Environment gates (writes)
 
 - **`BRIDGE_READONLY`** default **`true`** → writes return **`403`**.
 - **`BRIDGE_WRITE_ALLOWLIST`** — comma-separated operation IDs; **empty** → no writes even if not readonly.
 - **`BRIDGE_RATE_LIMIT_WRITES`** — default **3 per 60s**, in-memory (resets on restart) → **`429`**.
-- **`BRIDGE_REQUIRE_READBACK`** — post-write readback; many scalar parameters **cannot** be verified via OpenAPI → **`readback_failed`** does **not** imply the write failed.
+- **`BRIDGE_REQUIRE_READBACK`** — default **`true`**; re-reads config after every successful write and attaches a diff to the response. Many scalar parameters **cannot** be verified via OpenAPI → **`readback_failed`** does **not** imply the write failed.
 - **Legacy web writes** (`BRIDGE_LEGACY_WEB_MIN_WRITES` / `GROWATT_LEGACY_WEB_MIN_WRITES`): require **`GROWATT_WEB_USERNAME`**, **`GROWATT_WEB_PASSWORD`**, and resolved **`plant_id`**.
 
 ## HTTP status codes (writes)
@@ -90,7 +93,7 @@ More operations may be added to the registry after testing; until then they retu
 - **No raw parameter API** — only registry operations.
 - **Writes are MIN-family** in the current registry; other families get **422** on writes.
 - **Telemetry** is a best-effort snapshot; fields may be missing; check **`lost`**.
-- **Audit log** path **`BRIDGE_AUDIT_LOG`** (default under `/var/log/growatt-bridge/` in containers); not exposed over HTTP; entries never contain the API token.
+- **Audit log** path **`BRIDGE_AUDIT_LOG`** (default `/var/log/growatt-bridge/audit.jsonl` in containers); not exposed over HTTP; entries never contain the API token.
 
 ## Security and risk
 
