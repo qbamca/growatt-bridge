@@ -63,7 +63,7 @@ def _normalize_device_info(raw: dict[str, Any], family: DeviceFamily) -> DeviceI
         device_type=str(raw.get("deviceType") or raw.get("type") or raw.get("device_type") or "")
         or None,
         family=family.value,
-        model=raw.get("deviceModel") or raw.get("model") or raw.get("deviceAlias"),
+        model=str(m) if (m := (raw.get("deviceModel") or raw.get("model") or raw.get("deviceAlias"))) is not None else None,
         firmware_version=raw.get("firmwareVersion") or raw.get("firmware"),
         status=str(raw.get("status")) if raw.get("status") is not None else None,
     )

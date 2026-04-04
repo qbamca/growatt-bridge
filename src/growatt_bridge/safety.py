@@ -141,6 +141,16 @@ def _legacy_min_write_prerequisite_errors(
 # Only operations that have been exercised end-to-end against real hardware belong
 # here. Add more entries only after integration testing.
 OPERATION_REGISTRY: dict[str, _OperationSpec] = {
+    "set_ac_charge_enable": _OperationSpec(
+        operation_id="set_ac_charge_enable",
+        description="Enable or disable AC (grid-to-battery) charging.",
+        param_spec=_ParamSpec(
+            parameter_id="ac_charge",
+            legacy_web_type="ac_charge",
+            value_key="enabled",
+            is_bool=True,
+        ),
+    ),
     "set_ac_charge_stop_soc": _OperationSpec(
         operation_id="set_ac_charge_stop_soc",
         description="Set SOC target at which AC (grid) charging automatically stops (10–100).",
@@ -150,6 +160,21 @@ OPERATION_REGISTRY: dict[str, _OperationSpec] = {
             min_val=10,
             max_val=100,
         ),
+    ),
+    "set_on_grid_discharge_stop_soc": _OperationSpec(
+        operation_id="set_on_grid_discharge_stop_soc",
+        description="Set SOC at which on-grid discharging automatically stops (10–100).",
+        param_spec=_ParamSpec(
+            parameter_id="discharge_stop_soc",
+            legacy_web_type="on_grid_discharge_stop_soc",
+            min_val=10,
+            max_val=100,
+        ),
+    ),
+    "set_time_segment": _OperationSpec(
+        operation_id="set_time_segment",
+        description="Write one TOU time-segment slot (segment 1–9, mode 0–2, HH:MM times).",
+        is_time_segment=True,
     ),
 }
 

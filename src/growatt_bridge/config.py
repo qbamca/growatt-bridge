@@ -20,6 +20,9 @@ from .legacy_shine_web import DEFAULT_WEB_BASE_URL
 VALID_WRITE_OPERATIONS: frozenset[str] = frozenset(
     {
         "set_ac_charge_stop_soc",
+        "set_ac_charge_enable",
+        "set_on_grid_discharge_stop_soc",
+        "set_time_segment",
     }
 )
 

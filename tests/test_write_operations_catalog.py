@@ -12,13 +12,13 @@ from tests.conftest import make_app, make_mock_client, make_settings
 def test_build_catalog_matches_registry_keys():
     data = build_write_operations_catalog(include_policy=False, settings=None)
     ids = {op["operation_id"] for op in data["operations"]}
-    assert ids == set(OPERATION_REGISTRY.keys()) == {"set_ac_charge_stop_soc"}
+    assert ids == set(OPERATION_REGISTRY.keys())
 
 
 def test_build_catalog_scalar_schema():
     data = build_write_operations_catalog(include_policy=False, settings=None)
-    op = data["operations"][0]
-    assert op["operation_id"] == "set_ac_charge_stop_soc"
+    ops_by_id = {op["operation_id"]: op for op in data["operations"]}
+    op = ops_by_id["set_ac_charge_stop_soc"]
     assert op["constraints"]["requires_meter_acknowledgment"] is False
     fields = op["params_schema"]["fields"]
     assert len(fields) == 1
@@ -36,9 +36,9 @@ async def test_get_write_operations_no_policy(async_client):
     body = resp.json()
     assert "readonly" not in body
     assert body.get("allowlist_parse_error") is None
-    assert len(body["operations"]) == 1
-    first = body["operations"][0]
-    assert "currently_permitted" not in first
+    assert len(body["operations"]) == len(OPERATION_REGISTRY)
+    for op in body["operations"]:
+        assert "currently_permitted" not in op
 
 
 @pytest.mark.asyncio
@@ -69,7 +69,10 @@ async def test_get_write_operations_include_policy_allowlisted(tmp_path):
     assert resp.status_code == 200
     body = resp.json()
     assert body["readonly"] is False
-    assert body["operations"][0]["currently_permitted"] is True
+    ops_by_id = {op["operation_id"]: op for op in body["operations"]}
+    assert ops_by_id["set_ac_charge_stop_soc"]["currently_permitted"] is True
+    assert ops_by_id["set_ac_charge_enable"]["currently_permitted"] is False
+    assert ops_by_id["set_time_segment"]["currently_permitted"] is False
 
 
 @pytest.mark.asyncio

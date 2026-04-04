@@ -153,15 +153,20 @@ def _build_config(
         timestamp=datetime.now(timezone.utc),
         # These may be present in some firmware/API versions
         charge_power_rate=_int_or_none(
-            raw.get("pv_active_p_rate") or raw.get("pvActivePRate") or raw.get("chargePowerRate")
+            raw.get("charge_power")
+            or raw.get("pv_active_p_rate")
+            or raw.get("pvActivePRate")
+            or raw.get("chargePowerRate")
         ),
         discharge_power_rate=_int_or_none(
-            raw.get("grid_first_discharge_power_rate")
+            raw.get("discharge_power")
+            or raw.get("grid_first_discharge_power_rate")
             or raw.get("gridFirstDischargePowerRate")
             or raw.get("dischargePowerRate")
         ),
         discharge_stop_soc=_int_or_none(
-            raw.get("discharge_stop_soc")
+            raw.get("on_grid_discharge_stop_soc")
+            or raw.get("discharge_stop_soc")
             or raw.get("dischargeStopSoc")
             or raw.get("batteryLowCapacity")
         ),
@@ -169,7 +174,8 @@ def _build_config(
             raw.get("ac_charge") or raw.get("acCharge") or raw.get("acChargeEnable")
         ),
         ac_charge_stop_soc=_int_or_none(
-            raw.get("ac_charge_soc_limit")
+            raw.get("ub_ac_charging_stop_soc")
+            or raw.get("ac_charge_soc_limit")
             or raw.get("acChargeSocLimit")
             or raw.get("acChargeStopSoc")
         ),
@@ -177,7 +183,8 @@ def _build_config(
             raw.get("export_limit") or raw.get("exportLimit") or raw.get("exportLimitEnable")
         ),
         export_limit_power_rate=_int_or_none(
-            raw.get("export_limit_power_rate")
+            raw.get("exportLimitPowerRateStr")
+            or raw.get("export_limit_power_rate")
             or raw.get("exportLimitPowerRate")
             or raw.get("exportPowerLimit")
         ),
@@ -214,7 +221,13 @@ async def get_config(
     settings: Settings = request.app.state.settings
 
     resolved_plant_id = await _resolve_plant_id(client, device_sn, settings, hint=plant_id)
-    family = client.detect_device_family(device_sn, resolved_plant_id)
+    try:
+        family = client.detect_device_family(device_sn, resolved_plant_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Growatt Cloud error detecting device family: {format_growatt_cloud_error(exc)}",
+        ) from exc
 
     # Read TOU schedule (MIN only; SPH not yet mapped)
     time_segments: list[TimeSegment] = []
@@ -233,12 +246,12 @@ async def get_config(
                 format_growatt_cloud_error(exc),
             )
 
-        # Also pull device detail to extract any available config fields
+        # Pull settings bean to extract config fields
         try:
-            detail_raw = client.device_detail(device_sn, family)
+            detail_raw = client.read_device_settings(device_sn, family)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "device_detail(%s) for config failed: %s",
+                "read_device_settings(%s) for config failed: %s",
                 device_sn,
                 format_growatt_cloud_error(exc),
             )
@@ -288,7 +301,13 @@ async def get_time_segments(
     settings: Settings = request.app.state.settings
 
     resolved_plant_id = await _resolve_plant_id(client, device_sn, settings, hint=plant_id)
-    family = client.detect_device_family(device_sn, resolved_plant_id)
+    try:
+        family = client.detect_device_family(device_sn, resolved_plant_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Growatt Cloud error detecting device family: {format_growatt_cloud_error(exc)}",
+        ) from exc
 
     if family is not DeviceFamily.MIN:
         raise HTTPException(

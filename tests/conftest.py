@@ -49,6 +49,10 @@ def make_settings(**overrides) -> Settings:
         bridge_rate_limit_writes=3,
         bridge_require_readback=True,
         bridge_audit_log=Path("/tmp/test-audit.jsonl"),
+        # Ensure .env legacy web settings never bleed into unit tests.
+        bridge_legacy_web_min_writes=False,
+        growatt_web_username=None,
+        growatt_web_password=None,
     )
     defaults.update(overrides)
     return Settings.model_validate(defaults)

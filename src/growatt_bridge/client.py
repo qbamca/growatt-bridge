@@ -14,7 +14,10 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .legacy_shine_web import LegacyShineWebClient
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +36,22 @@ class DeviceFamily(str, Enum):
     UNKNOWN = "UNKNOWN"
 
 
+_MIN_DEVICE_TYPE_STRINGS = frozenset({"min", "tlx"})
+_SPH_DEVICE_TYPE_STRINGS = frozenset({"sph", "mix"})
+
+
 def _device_family_from_type(device_type: int | str | None) -> DeviceFamily:
-    """Map a raw device-type integer to a DeviceFamily."""
+    """Map a raw device-type value to a DeviceFamily.
+
+    Handles both the OpenAPI V1 integer form (7 = MIN, 5 = SPH) and the
+    legacy Shine web string form ('tlx'/'min' = MIN, 'sph'/'mix' = SPH).
+    """
+    if isinstance(device_type, str):
+        s = device_type.lower().strip()
+        if s in _MIN_DEVICE_TYPE_STRINGS:
+            return DeviceFamily.MIN
+        if s in _SPH_DEVICE_TYPE_STRINGS:
+            return DeviceFamily.SPH
     try:
         t = int(device_type)  # type: ignore[arg-type]
     except (TypeError, ValueError):
@@ -52,7 +69,7 @@ try:
     import growattServer  # type: ignore[import-untyped]
 except ImportError as exc:  # pragma: no cover
     raise ImportError(
-        "growattServer is not installed. Run: pip install growattServer>=1.9.0"
+        "growattServer is not installed. Run: pip install growattServer>=2.0.0"
     ) from exc
 
 
@@ -89,10 +106,17 @@ class GrowattClient:
     - Detects and caches device family per serial number.
     """
 
-    def __init__(self, token: str, server_url: str) -> None:
+    def __init__(
+        self,
+        token: str,
+        server_url: str,
+        *,
+        legacy_client: LegacyShineWebClient | None = None,
+    ) -> None:
         self._token = token
         self._server_url = server_url.rstrip("/") + "/"
         self._api = self._build_api()
+        self._legacy_client = legacy_client
         # Cache: sn → DeviceFamily (populated by detect_device_family)
         self._family_cache: dict[str, DeviceFamily] = {}
 
@@ -118,17 +142,28 @@ class GrowattClient:
 
     def plant_list(self) -> list[dict[str, Any]]:
         """Return the list of plants accessible by the token."""
+        if self._legacy_client is not None:
+            return self._legacy_client.plant_list()
         raw = self._api.plant_list()
         return _extract_list(raw, "plants")
 
     def plant_details(self, plant_id: str) -> dict[str, Any]:
         """Return details for a single plant."""
+        if self._legacy_client is not None:
+            return self._legacy_client.plant_details(plant_id)
         return self._api.plant_details(plant_id) or {}
 
     # -- Device helpers --------------------------------------------------------
 
     def device_list(self, plant_id: str) -> list[dict[str, Any]]:
-        """Return the list of devices in a plant."""
+        """Return the list of devices in a plant.
+
+        Uses the legacy Shine web API (``newTwoPlantAPI.do``) when a
+        ``legacy_client`` was provided at construction time; falls back to
+        ``OpenApiV1.device_list`` otherwise.
+        """
+        if self._legacy_client is not None:
+            return self._legacy_client.device_list(plant_id)
         raw = self._api.device_list(plant_id)
         return _extract_list(raw, "devices")
 
@@ -163,6 +198,8 @@ class GrowattClient:
     def device_detail(self, device_sn: str, family: DeviceFamily) -> dict[str, Any]:
         """Fetch live detail for an inverter, routed by family."""
         if family is DeviceFamily.MIN:
+            if self._legacy_client is not None:
+                return self._legacy_client.tlx_detail(device_sn)
             return self._api.min_detail(device_sn) or {}
         if family is DeviceFamily.SPH:
             return self._api.sph_detail(device_sn) or {}
@@ -178,6 +215,22 @@ class GrowattClient:
 
     # -- Config reads ----------------------------------------------------------
 
+    def read_device_settings(self, device_sn: str, family: DeviceFamily) -> dict[str, Any]:
+        """Return the configuration/settings dict for an inverter.
+
+        For MIN family with a legacy client this is the full tlxSetBean from
+        getTlxSetData (contains ac_charge, discharge_stop_soc, etc.).
+        Falls back to OpenApiV1.min_settings() when legacy is unavailable.
+        SPH uses device_detail (V1 sph_detail mixes live + config data).
+        """
+        if family is DeviceFamily.MIN:
+            if self._legacy_client is not None:
+                return self._legacy_client.read_settings_bean(device_sn)
+            return self._api.min_settings(device_sn) or {}
+        if family is DeviceFamily.SPH:
+            return self._api.sph_detail(device_sn) or {}
+        raise UnsupportedDeviceFamilyError(device_sn, family)
+
     def read_time_segments(self, device_sn: str, family: DeviceFamily) -> list[dict[str, Any]]:
         """Read all TOU time-segment slots from the inverter.
 
@@ -185,7 +238,9 @@ class GrowattClient:
         first-class; SPH is not yet mapped.
         """
         if family is DeviceFamily.MIN:
-            raw = self._api.min_read_time_segment(device_sn)
+            if self._legacy_client is not None:
+                return self._legacy_client.read_time_segments(device_sn)
+            raw = self._api.min_read_time_segments(device_sn)
             return _extract_list(raw, "timeSegments") or ([raw] if raw else [])
         raise UnsupportedDeviceFamilyError(device_sn, family)
 
@@ -267,10 +322,25 @@ def build_client_from_settings(settings: Any) -> GrowattClient:
 
     Accepts the Settings object (defined in config.py) to avoid a circular
     import while keeping the factory co-located with the client.
+
+    When ``GROWATT_WEB_USERNAME`` and ``GROWATT_WEB_PASSWORD`` are set, a
+    ``LegacyShineWebClient`` is attached so that ``device_list`` calls use
+    the legacy ``newTwoPlantAPI.do`` endpoint instead of OpenAPI V1.
     """
+    from .legacy_shine_web import LegacyShineWebClient
+
+    legacy: LegacyShineWebClient | None = None
+    if settings.growatt_web_username and settings.growatt_web_password:
+        legacy = LegacyShineWebClient(
+            settings.growatt_web_base_url,
+            settings.growatt_web_username,
+            settings.growatt_web_password,
+        )
+
     return GrowattClient(
         token=settings.growatt_api_token,
         server_url=settings.growatt_server_url,
+        legacy_client=legacy,
     )
 
 
