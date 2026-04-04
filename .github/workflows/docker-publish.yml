@@ -1,6 +1,6 @@
 # Build and push a versioned image to GHCR on every push to main.
 # Pull from another project, e.g.:
-#   docker pull ghcr.io/<owner>/growatt-bridge:v0.2.0-abc1234
+#   docker pull ghcr.io/<owner>/growatt-bridge:v0.3.0-abc1234
 #   docker pull ghcr.io/<owner>/growatt-bridge:latest
 
 name: Publish Docker image
