@@ -31,7 +31,7 @@ router = APIRouter(tags=["config"])
 
 # ── Time-segment normalization ─────────────────────────────────────────────────
 
-_HHMM_RE = re.compile(r"^\d{1,2}:\d{2}$")
+_HHMM_RE = re.compile(r"^\d{1,2}:\d{1,2}$")
 
 
 def _to_hhmm(val: Any) -> str | None:
@@ -115,7 +115,7 @@ def _normalize_time_segments(raw_segments: list[dict[str, Any]]) -> list[TimeSeg
 
 def _int_or_none(val: Any) -> int | None:
     try:
-        return int(val)
+        return int(float(val))
     except (TypeError, ValueError):
         return None
 

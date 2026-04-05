@@ -106,30 +106,28 @@ def normalize_min_telemetry(device_sn: str, raw: dict[str, Any]) -> NormalizedTe
         iac3=_float(_get(raw, "iac3")),
         fac=_float(_get(raw, "fac", "frequency")),
         # Battery
-        soc=_float(_get(raw, "soc", "batterySOC", "bdc1_SOC")),
-        p_charge=_float(_get(raw, "pCharge", "p_charge", "chargePower", "bdc1_chargePower")),
-        p_discharge=_float(
-            _get(raw, "pDisCharge", "pDischarge", "p_discharge", "dischargePower")
-        ),
-        v_bat=_float(_get(raw, "vBattery1", "vBattery", "v_bat", "batteryVoltage")),
-        i_bat=_float(_get(raw, "iBattery1", "iBattery", "i_bat", "batteryCurrent")),
+        soc=_float(_get(raw, "bdc1Soc", "bmsSoc", "soc1", "soc", "batterySOC")),
+        p_charge=_float(_get(raw, "bdc1ChargePower", "pCharge", "chargePower")),
+        p_discharge=_float(_get(raw, "bdc1DischargePower", "pDisCharge", "pDischarge", "dischargePower")),
+        v_bat=_float(_get(raw, "bdc1Vbat", "bmsVbat", "vBattery1", "vBattery", "batteryVoltage")),
+        i_bat=_float(_get(raw, "bdc1Ibat", "bmsIbat", "iBattery1", "iBattery", "batteryCurrent")),
         # Grid
-        p_to_grid=_float(_get(raw, "pToGrid", "p_to_grid", "exportPower")),
-        p_to_user=_float(_get(raw, "pToUser", "p_to_user", "importPower")),
+        p_to_grid=_float(_get(raw, "pacToGridTotal", "pToGrid", "exportPower")),
+        p_to_user=_float(_get(raw, "pacToUserTotal", "pToUser", "importPower")),
         # Energy counters
-        e_today=_float(_get(raw, "eday", "eDay", "ePvToday", "energyToday")),
-        e_total=_float(_get(raw, "etotal", "eTotal", "ePvTotal", "energyTotal")),
+        e_today=_float(_get(raw, "eacToday", "eday", "eDay", "ePvToday", "energyToday")),
+        e_total=_float(_get(raw, "eacTotal", "etotal", "eTotal", "ePvTotal", "energyTotal")),
         e_charge_today=_float(
-            _get(raw, "eBatChargeToday", "eBatCharge_day", "chargeEnergyToday")
+            _get(raw, "echargeToday", "eBatChargeToday", "eBatCharge_day", "chargeEnergyToday")
         ),
         e_discharge_today=_float(
-            _get(raw, "eBatDischargeToday", "eBatDisCharge_day", "dischargeEnergyToday")
+            _get(raw, "edischargeToday", "eBatDischargeToday", "eBatDisCharge_day", "dischargeEnergyToday")
         ),
         e_to_grid_today=_float(
-            _get(raw, "eToGridToday", "eToGrid_day", "exportEnergyToday")
+            _get(raw, "etoGridToday", "eToGridToday", "eToGrid_day", "exportEnergyToday")
         ),
         e_from_grid_today=_float(
-            _get(raw, "eFromGridToday", "eLocalLoad_day", "importEnergyToday")
+            _get(raw, "etoUserToday", "eFromGridToday", "eLocalLoad_day", "importEnergyToday")
         ),
         # Temperature
         temp1=_float(_get(raw, "temperature", "temperature1", "temp1", "inverterTemperature")),
