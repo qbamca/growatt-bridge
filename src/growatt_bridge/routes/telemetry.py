@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -175,6 +176,19 @@ async def get_telemetry(
             detail=str(exc),
         ) from exc
     except Exception as exc:  # noqa: BLE001
+        if isinstance(exc, json.JSONDecodeError):
+            doc = getattr(exc, "doc", None)
+            if isinstance(doc, str) and doc.strip():
+                logger.warning(
+                    "telemetry JSON decode failed (device_sn=%s): %s",
+                    device_sn,
+                    exc,
+                )
+                logger.debug(
+                    "telemetry JSON decode body_preview (device_sn=%s): %r",
+                    device_sn,
+                    doc[:2000],
+                )
         detail = format_growatt_cloud_error(exc)
         logger.error("device_detail(%s) for telemetry failed: %s", device_sn, detail)
         raise HTTPException(status_code=502, detail=f"Growatt Cloud error: {detail}") from exc

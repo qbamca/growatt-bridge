@@ -16,6 +16,7 @@ def test_defaults():
     assert s.growatt_server_url == "https://openapi.growatt.com/"
     assert s.bridge_port == 8081
     assert s.bridge_host == "0.0.0.0"
+    assert s.bridge_log_level == "INFO"
     assert s.bridge_readonly is True
     assert s.bridge_write_allowlist == ""
     assert s.bridge_rate_limit_writes == 3
@@ -25,6 +26,16 @@ def test_defaults():
 def test_token_stored():
     s = make_settings(growatt_api_token="my-secret-token")
     assert s.growatt_api_token == "my-secret-token"
+
+
+def test_bridge_log_level_case_insensitive():
+    s = make_settings(bridge_log_level="debug")
+    assert s.bridge_log_level == "DEBUG"
+
+
+def test_bridge_log_level_invalid_falls_back_to_info():
+    s = make_settings(bridge_log_level="verbose")
+    assert s.bridge_log_level == "INFO"
 
 
 # ── URL normalisation ─────────────────────────────────────────────────────────

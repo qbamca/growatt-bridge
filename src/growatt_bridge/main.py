@@ -21,6 +21,16 @@ logging.basicConfig(
 )
 
 
+def _configure_logging(level_name: str) -> None:
+    """Apply root log level from settings (overrides import-time basicConfig)."""
+    level = getattr(logging, level_name.upper(), logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        force=True,
+    )
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """Initialise shared state on startup; clean up on shutdown."""
@@ -33,6 +43,7 @@ async def _lifespan(app: FastAPI):
             exc,
         )
         raise
+    _configure_logging(settings.bridge_log_level)
     client = build_client_from_settings(settings)
     safety = SafetyLayer(settings, client)
 
@@ -41,9 +52,10 @@ async def _lifespan(app: FastAPI):
     app.state.safety = safety
 
     logger.info(
-        "growatt-bridge started. readonly=%s server=%s",
+        "growatt-bridge started. readonly=%s server=%s log_level=%s",
         settings.bridge_readonly,
         settings.growatt_server_url,
+        settings.bridge_log_level,
     )
     yield
     logger.info("growatt-bridge shutting down.")

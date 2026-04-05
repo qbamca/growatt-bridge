@@ -17,6 +17,31 @@ from growattServer import hash_password
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_json_response(resp: requests.Response, *, context: str) -> Any:
+    """Parse ``resp.json()``; on failure log debug details then re-raise."""
+    try:
+        return resp.json()
+    except json.JSONDecodeError as exc:
+        text = resp.text or ""
+        preview = text[:2000]
+        logger.warning(
+            "growatt legacy JSON parse failed (%s): %s | status=%s url=%s "
+            "content_type=%r content_length=%r",
+            context,
+            exc,
+            resp.status_code,
+            getattr(resp, "url", ""),
+            resp.headers.get("Content-Type", ""),
+            resp.headers.get("Content-Length", ""),
+        )
+        logger.debug(
+            "growatt legacy JSON parse failed body_preview (%s): %r",
+            context,
+            preview,
+        )
+        raise
+
 DEFAULT_WEB_BASE_URL = "https://server.growatt.com/"
 _DEFAULT_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -171,7 +196,10 @@ class LegacyShineWebClient:
             timeout=self._timeout,
         )
         resp.raise_for_status()
-        body = resp.json()
+        body = _parse_json_response(
+            resp,
+            context=f"newTlxApi.do getTlxDetailData id={device_sn!r}",
+        )
         return body.get("data") or body.get("obj") or body
 
     def read_settings_bean(self, serial_num: str) -> dict[str, Any]:

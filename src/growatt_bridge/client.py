@@ -11,6 +11,7 @@ Responsibilities:
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from enum import Enum
@@ -200,9 +201,25 @@ class GrowattClient:
         if family is DeviceFamily.MIN:
             if self._legacy_client is not None:
                 return self._legacy_client.tlx_detail(device_sn)
-            return self._api.min_detail(device_sn) or {}
+            try:
+                return self._api.min_detail(device_sn) or {}
+            except json.JSONDecodeError as exc:
+                logger.info(
+                    "OpenAPI min_detail JSON parse failed (device_sn=%s): %s",
+                    device_sn,
+                    exc,
+                )
+                raise
         if family is DeviceFamily.SPH:
-            return self._api.sph_detail(device_sn) or {}
+            try:
+                return self._api.sph_detail(device_sn) or {}
+            except json.JSONDecodeError as exc:
+                logger.info(
+                    "OpenAPI sph_detail JSON parse failed (device_sn=%s): %s",
+                    device_sn,
+                    exc,
+                )
+                raise
         raise UnsupportedDeviceFamilyError(device_sn, family)
 
     def device_energy(self, device_sn: str, family: DeviceFamily) -> dict[str, Any]:

@@ -122,6 +122,18 @@ class Settings(BaseSettings):
         Field(default="0.0.0.0", description="HTTP bind address."),
     ]
 
+    bridge_log_level: Annotated[
+        str,
+        Field(
+            default="INFO",
+            validation_alias=AliasChoices("BRIDGE_LOG_LEVEL", "LOG_LEVEL"),
+            description=(
+                "Python root log level (DEBUG, INFO, WARNING, ERROR, CRITICAL). "
+                "Use DEBUG temporarily to log telemetry JSON parse body previews."
+            ),
+        ),
+    ]
+
     # ── Safety / Write Control ─────────────────────────────────────────────────
     bridge_readonly: Annotated[
         bool,
@@ -172,6 +184,13 @@ class Settings(BaseSettings):
     ]
 
     # ── Validators ─────────────────────────────────────────────────────────────
+
+    @field_validator("bridge_log_level", mode="before")
+    @classmethod
+    def _normalise_log_level(cls, v: object) -> str:
+        allowed = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+        s = str(v).strip().upper() if v is not None else "INFO"
+        return s if s in allowed else "INFO"
 
     @field_validator("growatt_server_url", "growatt_web_base_url")
     @classmethod

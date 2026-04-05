@@ -44,6 +44,7 @@ def make_settings(**overrides) -> Settings:
         growatt_plant_id=None,
         bridge_port=8081,
         bridge_host="0.0.0.0",
+        bridge_log_level="INFO",
         bridge_readonly=True,
         bridge_write_allowlist="",
         bridge_rate_limit_writes=3,
