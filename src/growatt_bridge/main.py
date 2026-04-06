@@ -69,7 +69,7 @@ def create_app() -> FastAPI:
             "HTTP bridge service wrapping Growatt OpenAPI V1 with safety layer. "
             "All writes are disabled by default (BRIDGE_READONLY=true)."
         ),
-        version="0.2.0",
+        version="0.3.1",
         lifespan=_lifespan,
     )
 

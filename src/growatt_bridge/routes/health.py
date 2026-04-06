@@ -57,7 +57,7 @@ async def info(request: Request) -> InfoResponse:
     try:
         pkg_version = version("growatt-bridge")
     except PackageNotFoundError:
-        pkg_version = "0.2.0"
+        pkg_version = "0.3.1"
 
     try:
         allowed_ops = settings.parsed_write_allowlist()
