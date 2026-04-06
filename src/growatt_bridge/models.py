@@ -88,7 +88,7 @@ class DeviceCapabilities(BaseModel):
 # ── Normalized telemetry ──────────────────────────────────────────────────────
 
 
-class NormalizedTelemetry(BaseModel):
+class NormalizedTelemetry(BaseModel): 
     """Normalized live telemetry snapshot for a MIN/TLX inverter.
 
     Units: power → W, energy → kWh, voltage → V, current → A,

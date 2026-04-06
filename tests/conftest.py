@@ -28,8 +28,6 @@ sys.modules.setdefault("growattServer", _mock_growatt_module)
 # ── Bridge imports (after mock is in place) ───────────────────────────────────
 from growatt_bridge.client import DeviceFamily, GrowattClient  # noqa: E402
 from growatt_bridge.config import Settings  # noqa: E402
-from growatt_bridge.main import create_app  # noqa: E402
-from growatt_bridge.safety import SafetyLayer  # noqa: E402
 
 
 # ── Settings factory ──────────────────────────────────────────────────────────
@@ -97,8 +95,16 @@ def make_app(settings: Settings, mock_client: MagicMock) -> tuple:
     the lifespan entirely by setting ``app.state`` directly.  The routes
     access ``request.app.state``, which is the same object.
 
+    Imports ``SafetyLayer`` and ``create_app`` here (not at module load) so
+    ``tests/integration/conftest.py`` can reload ``growatt_bridge`` for live
+    API tests without leaving stale exception classes that break ``except``
+    matching in route handlers.
+
     Returns (app, safety).
     """
+    from growatt_bridge.main import create_app
+    from growatt_bridge.safety import SafetyLayer
+
     safety = SafetyLayer(settings, mock_client)
     app = create_app()
     app.state.settings = settings

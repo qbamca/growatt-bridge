@@ -464,6 +464,47 @@ def test_legacy_execute_uses_tcp_set_scalar(tmp_path):
     client.min_write_parameter.assert_not_called()
 
 
+def test_get_legacy_client_prefers_shared_growatt_client_legacy(tmp_path):
+    """Writes use the same LegacyShineWebClient instance as GrowattClient reads."""
+    from growatt_bridge.client import GrowattClient
+    from growatt_bridge.legacy_shine_web import LegacyShineWebClient
+
+    shared = MagicMock(spec=LegacyShineWebClient)
+    client = MagicMock(spec=GrowattClient)
+    client.legacy_shine_web = shared
+
+    settings = make_settings(
+        bridge_audit_log=tmp_path / "audit.jsonl",
+        bridge_legacy_web_min_writes=True,
+        growatt_web_username="u",
+        growatt_web_password="p",
+    )
+    layer = SafetyLayer(settings, client)
+    assert layer._get_legacy_client() is shared
+
+
+def test_get_legacy_client_lazy_without_shared_legacy(tmp_path):
+    """When GrowattClient has no legacy client, SafetyLayer still builds one lazily."""
+    from growatt_bridge.client import GrowattClient
+
+    client = GrowattClient(token="t", server_url="https://openapi.growatt.com/")
+    settings = make_settings(
+        bridge_audit_log=tmp_path / "audit.jsonl",
+        bridge_legacy_web_min_writes=True,
+        growatt_web_username="u",
+        growatt_web_password="p",
+    )
+    layer = SafetyLayer(settings, client)
+
+    with patch("growatt_bridge.safety.LegacyShineWebClient") as ctor:
+        mock_inst = MagicMock()
+        ctor.return_value = mock_inst
+        a = layer._get_legacy_client()
+        b = layer._get_legacy_client()
+        assert a is mock_inst is b
+        ctor.assert_called_once()
+
+
 # ── _validate_parameter_params direct (bool op removed; test numeric path) ────
 
 
