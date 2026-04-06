@@ -1,6 +1,7 @@
-"""Integration tests for write operations.
+"""Integration tests for write operations (legacy tcpSet.do only).
 
-Each test follows the mandatory cycle:
+The integration session forces ``bridge_legacy_web_min_writes``; MIN writes use
+the Shine web portal, not OpenAPI v1/tlxSet. Each test follows the cycle:
   1. Read current value from the inverter
   2. Write a safely-mutated value
   3. Assert success

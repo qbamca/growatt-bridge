@@ -318,6 +318,15 @@ class GrowattClient:
         """
         return self._api
 
+    @property
+    def legacy_shine_web(self) -> LegacyShineWebClient | None:
+        """The shared legacy Shine web session client, if configured.
+
+        Reads and the safety layer use the same instance so cookies and login
+        state stay consistent across OpenAPI and tcpSet.do paths.
+        """
+        return self._legacy_client
+
 
 # ── Errors ────────────────────────────────────────────────────────────────────
 

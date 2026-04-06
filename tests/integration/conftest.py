@@ -1,7 +1,14 @@
-"""Integration test fixtures — real Growatt Cloud API, no mocks.
+"""Integration test fixtures — real Growatt Cloud + Shine legacy web, no mocks.
 
-All tests in this package are skipped automatically when GROWATT_API_TOKEN
-is not set in the environment (or loaded from .env).
+All tests in this package are skipped when required credentials are missing.
+The repo-root ``.env`` is loaded at import time so local runs match the app.
+
+**Legacy-only policy:** Integration tests require **Shine web portal credentials**
+(``GROWATT_WEB_USERNAME`` / ``GROWATT_WEB_PASSWORD``) so ``GrowattClient`` attaches
+``LegacyShineWebClient``. MIN **reads** (plants, devices, TLX detail, config) and
+**writes** (tcpSet.do via ``bridge_legacy_web_min_writes=True``) then use the legacy
+portal session. The OpenAPI token is still required to construct ``OpenApiV1`` (some
+code paths and token auth); health checks do not call the OpenAPI.
 
 The live_app_client fixture wires a real GrowattClient into a real FastAPI app
 via ASGITransport so the full route → SafetyLayer → GrowattClient → Cloud chain
@@ -9,7 +16,8 @@ runs without spinning up an HTTP server.
 
 Safety overrides applied for the test session:
 - bridge_readonly = False
-- bridge_write_allowlist = all three tested operations
+- bridge_legacy_web_min_writes = True (writes use tcpSet.do only)
+- bridge_write_allowlist = all tested write operations
 - bridge_rate_limit_writes = 20 (default 3 would block a 6-write test run)
 - bridge_require_readback = True
 
@@ -43,6 +51,7 @@ if isinstance(_mock, MagicMock):
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -52,6 +61,11 @@ from growatt_bridge.config import Settings
 from growatt_bridge.main import create_app
 from growatt_bridge.safety import SafetyLayer
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ENV_FILE = _REPO_ROOT / ".env"
+if _ENV_FILE.is_file():
+    load_dotenv(_ENV_FILE)
+
 _WRITE_ALLOWLIST = "set_ac_charge_stop_soc,set_ac_charge_enable,set_on_grid_discharge_stop_soc,set_time_segment"
 
 
@@ -60,9 +74,15 @@ def real_settings() -> Settings:
     if not os.environ.get("GROWATT_API_TOKEN"):
         pytest.skip("GROWATT_API_TOKEN not set — skipping integration tests")
     base = Settings()
+    if not (base.growatt_web_username and base.growatt_web_password):
+        pytest.skip(
+            "Integration tests use legacy Shine web only: set GROWATT_WEB_USERNAME "
+            "and GROWATT_WEB_PASSWORD (see docs for tcpSet / portal login)."
+        )
     return base.model_copy(
         update={
             "bridge_readonly": False,
+            "bridge_legacy_web_min_writes": True,
             "bridge_write_allowlist": _WRITE_ALLOWLIST,
             "bridge_rate_limit_writes": 20,
             "bridge_require_readback": True,
@@ -73,7 +93,13 @@ def real_settings() -> Settings:
 
 @pytest_asyncio.fixture(scope="session")
 async def live_app_client(real_settings: Settings) -> AsyncClient:
+    from growatt_bridge.client import GrowattClient
+
     client = build_client_from_settings(real_settings)
+    assert isinstance(client, GrowattClient)
+    assert client.legacy_shine_web is not None, (
+        "integration expects LegacyShineWebClient (set web username/password)"
+    )
     safety = SafetyLayer(real_settings, client)
     app = create_app()
     app.state.settings = real_settings

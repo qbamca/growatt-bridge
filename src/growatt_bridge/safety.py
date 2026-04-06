@@ -448,12 +448,20 @@ class SafetyLayer:
         self._legacy_client: LegacyShineWebClient | None = None
 
     def _get_legacy_client(self) -> LegacyShineWebClient | None:
-        """Lazily construct the legacy web client when the feature flag and credentials are set."""
+        """Return the legacy web client for tcpSet.do writes.
+
+        Prefers the ``GrowattClient.legacy_shine_web`` instance so reads and
+        writes share session state; falls back to a lazily built client when
+        the main client was constructed without legacy credentials (e.g. tests).
+        """
         if not self._settings.bridge_legacy_web_min_writes:
             return None
         u, p = self._settings.growatt_web_username, self._settings.growatt_web_password
         if not u or not p:
             return None
+        shared = self._client.legacy_shine_web
+        if shared is not None:
+            return shared
         with self._legacy_lock:
             if self._legacy_client is None:
                 self._legacy_client = LegacyShineWebClient(
